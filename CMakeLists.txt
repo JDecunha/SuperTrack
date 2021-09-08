@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
-project (SImpTracks VERSION 1.0.0 LANGUAGES CXX CUDA)
+project (SuperTrack VERSION 1.0.0 LANGUAGES CXX CUDA)
 
 
 set(CMAKE_CXX_STANDARD "17")
@@ -26,9 +26,9 @@ message("ROOT Version: ${ROOT_VERSION}")
 #include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 #Add an executable program and link to ROOT libraries
-add_executable(SuperimposeTracks superimpose_tracks.cu)
-target_link_libraries(SuperimposeTracks PUBLIC ${ROOT_LIBRARIES})
+add_executable(SuperTrack SuperTrack.cu)
+target_link_libraries(SuperTrack PUBLIC ${ROOT_LIBRARIES})
 #set_property(TARGET SuperimposeTracks PROPERTY CUDA_SEPARABLE_COMPILATION ON)
-target_link_libraries(SuperimposeTracks PRIVATE cuda_test)
+target_link_libraries(SuperTrack PRIVATE cuda_test)
 
 

@@ -1,8 +1,12 @@
+//SuperTrack
+#include "include/testCUDA.cuh"
+//ROOT
 #include "TFile.h"
 #include "THStack.h"
 #include "TPad.h"
 #include "TH1F.h"
 #include "TTreeReader.h"
+#include "TCanvas.h"
 #include "TROOT.h"
 #include "TTreeReaderValue.h"
 #include "TTreeReaderArray.h"
@@ -13,14 +17,13 @@
 #include "Math/SMatrix.h"
 #include "Math/LorentzVector.h"
 #include "Math/Vector4Dfwd.h"
+//STD
 #include <unordered_map>
 #include <vector>
 #include <iterator>
 #include <tuple>
 #include <filesystem>
-#include "include/testCUDA.cuh"
 #include <stdio.h>
-
 
 //SMatrix and SVector are the fastest
 //ways to hold vectors and matrices in ROOT
@@ -31,9 +34,6 @@ typedef ROOT::Math::SVector<int,3> SIntegerVector3;
 #define VERY_VERBOSE 1
 
 using namespace std;
-
-//GLOBAL VARIABLES
-//TTree *microdosimetry;
 
 //USEFUL COMMANDS
 //from command line: Tree->Show(entry number) is useful
@@ -87,18 +87,27 @@ struct DataStruct
 	}
 };
 
-int determine_number_of_events(TTree *tree)
+void BinLogX(TH1F* h)
 {
-	//TODO: see if I can either 1.) get the previous branch address and reset it after I set it here 
-	//2.) OR just find a way to access value without having to set the branch address at all. Becuase this seems like a poor way of accessing a variable.
-	int number_of_edeps = tree->GetEntries();
-	int number_of_events;
-	tree->SetBranchAddress("eventID",&number_of_events);
-	tree->GetEntry(number_of_edeps-1);
-	tree->ResetBranchAddresses();
+	///Very useful function from the ROOT forums
+	///If you enter your axes in Log10 notation (i.e. -3,0) in the initial TH1 constructor
+	///This will reformat your bins logarithmically for you
 
-	return number_of_events+1;
-}
+   TAxis *axis = h->GetXaxis();
+   int bins = axis->GetNbins();
+
+   Axis_t from = axis->GetXmin();
+   Axis_t to = axis->GetXmax();
+   Axis_t width = (to - from) / bins;
+   Axis_t *new_bins = new Axis_t[bins + 1];
+
+   for (int i = 0; i <= bins; i++) {
+     new_bins[i] = TMath::Power(10, from + i * width);
+
+   }
+   axis->Set(bins, new_bins);
+   delete[] new_bins;
+} 
 
 void BinLogXMultithread(std::shared_ptr<TH1F> h)
 {
@@ -203,55 +212,39 @@ void uniform_random_rotation_matrix_optimized(float x0,float x1,float x2, SMatri
 	matrix->SetElements(matrixvals,matrixvals+9);
 }
 
-TEntryList* create_entry_list(TFile* f, Int_t nevents)
+TH1F score_lineal_voxel(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 1, Long_t random_seed = time(NULL))
 {
-
-	//TFile *f = TFile::Open(filepath);
-	TTreeReader microdosimetryreader("microdosimetry", f);
-	TTreeReaderValue<Int_t> eventID(microdosimetryreader, "eventID");
-	TEntryList* microdosimetry_entry_list = new TEntryList();
-
-	while (microdosimetryreader.Next())
-	{
-		if (*eventID < nevents)
-		{
-			microdosimetry_entry_list->Enter(microdosimetryreader.GetCurrentEntry());
-		}
-		else {break;}
-	}
-
-	return microdosimetry_entry_list;
-
-}
-
-TH1F score_lineal_histogram_multithreaded_explicit(TString filepath, float_t scoring_square_half_length, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, float_t CPE_range,Int_t nthreads, Long_t random_seed = time(NULL),Long64_t nhistoriestoanalyze = 0)
-{
-	//open the file, retrive the tree
+	//open the file and retrieve the trees
 	TFile f = TFile(filepath);
-	TTree *microdosimetry;
-	f.GetObject("microdosimetry",microdosimetry);
+	TTree *trackIndex;
+	f.GetObject("Track index",trackIndex);
+	long long nTracksInFile = trackIndex->GetEntries();
 
-	//Now, loop over the Tree cluster by cluster,
-	//and determine the entry and exit points for each TreeReader
-	Long64_t nentries = microdosimetry->GetEntries();
-	if (nhistoriestoanalyze < nentries && nhistoriestoanalyze != 0) {nentries = nhistoriestoanalyze;} //only if the number of histories you have requested is smaller than the file, then analyze that many. If 0, then analyze all.
-	auto clusteriterator = microdosimetry->GetClusterIterator(0);
-	std::vector<std::tuple<Int_t,Int_t,Int_t,TString>> input_arguments_multithreading;
-	Long64_t start_entry_val = 0;
-	Long64_t end_entry_val = 0;
+	//Populate our tuple with the first entry, last entry, and random seed for each thread
+	std::vector<std::tuple<Int_t,Int_t,Int_t,TString>> perthread_input_arguments;
 
-	for (Int_t i = 1; i <= nthreads; i++)
+	//TODO: update the GEANT code to use long long for the event index
+	if (nTracksInFile <= nthreads)
+	{ 
+		long start_entry_val = 0;
+		TTreeReader trackIndexReader("Track index", &f);
+		TTreeReaderValue<long long> end_entry_val(trackIndexReader, "index");
+
+		for (Int_t i = 0; i < nTracksInFile; i++)
+		{
+			trackIndexReader.Next();
+			perthread_input_arguments.push_back(std::make_tuple(start_entry_val,*end_entry_val-1,i,filepath));
+			//Wcout << "thread: " << i << " start val: " << start_entry_val << " end val: " << *end_entry_val-1 << endl;
+			start_entry_val = *end_entry_val;
+		}
+	}
+	else
 	{
-		while((end_entry_val = clusteriterator()) < (nentries*i)/nthreads) {}
-		input_arguments_multithreading.push_back(std::make_tuple(start_entry_val,end_entry_val,i,filepath));
-		//cout << "thread: " << i << " start: " << start_entry_val << " end: " << end_entry_val << endl;
-		start_entry_val = end_entry_val + 1;
+		cout << "Number of tracks in file greater than requested threads. Case not yet implemented." << endl;
 	}
 
-	
-	f.Close(); //I can close this file I'm done with it
-
-	Long_t random_seed_base = time(NULL);
+	//We are done reading the Tree single threaded. Close it.
+	f.Close();
 
 	float RAND_MAX_F = float(RAND_MAX);
 	
@@ -260,12 +253,21 @@ TH1F score_lineal_histogram_multithreaded_explicit(TString filepath, float_t sco
 	{
 		//Open the file in each process and make a Tree Reader
 		TFile f = TFile(get<3>(input));
-		TTreeReader microdosimetryreader("microdosimetry", &f);
-		microdosimetryreader.SetEntriesRange(get<0>(input),get<1>(input));
-		TTreeReaderArray<ROOT::Math::XYZTVector> XYZEdep(microdosimetryreader, "XYZEdepVector");
-		TTreeReaderValue<Int_t> eventID(microdosimetryreader, "eventID");
+		TTreeReader trackReader("Tracks", &f);
+		trackReader.SetEntriesRange(get<0>(input),get<1>(input));
+		TTreeReaderValue<double_t> x(trackReader, "x [nm]");
+		TTreeReaderValue<double_t> y(trackReader, "y [nm]");
+		TTreeReaderValue<double_t> z(trackReader, "z [nm]");
+		TTreeReaderValue<double_t> edep(trackReader, "edep [eV]");
 
 		cout << "thread #: " << get<2>(input) << " starting at: " << to_string(get<0>(input)) << endl;
+
+		//Get the voxel side length
+		TNamed *voxelSideLengthName;
+		double_t voxelSideLength;
+		f.GetObject("Voxel side length [mm]",voxelSideLengthName);
+		voxelSideLength = 1e6*atof(voxelSideLengthName->GetTitle()); //Get voxel side length and convert to nm
+		double_t scoring_square_half_length = voxelSideLength/2;
 
 		//Initialize the geometry
 		long long int index;
@@ -279,112 +281,91 @@ TH1F score_lineal_histogram_multithreaded_explicit(TString filepath, float_t sco
 		} 
 		long long int num_spheres_total = TMath::Power((num_spheres_linear),3);
 		float_t top_sphere_offset = -(((float(num_spheres_linear))/2)-0.5)*scoring_sphere_spacing;//So the furthest sphere away in X,Y, or Z will be number of spheres plus the half center sphere away from the center
-		std::unordered_map<int,double> energy_map; //define an unordered dictionary to hold edep values and associated volume
 
 		#if VERBOSE == 2
 		cout << "Number of spheres in a line: " << num_spheres_linear << endl;
 		cout << "Total number of spheres in a cube: " << num_spheres_total << endl;
 		cout << "largest sphere offset from central sphere: " << top_sphere_offset << endl;
-		cout << "Total number of entries in file: " << microdosimetry->GetEntries() << endl;
 		#endif
 
 		//Initialize the histogram
 		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
 		BinLogX(&lineal_histogram); //transform the bins to logarithmic
+		std::unordered_map<int,double> energy_map; //define an unordered dictionary to hold edep values and associated volume
 
 		//Initialize the random number generator. Append the thread ID to the current time
-		Long_t random_seed = std::stol(std::to_string(random_seed_base) + std::to_string(get<2>(input)));
-		//TODO: test that my threads are getting different random numbers (I know they're getting different seeds, but does this work?)
-		srand(random_seed);
+		Long_t random_seed = std::stol(std::to_string(random_seed) + std::to_string(get<2>(input)));
+		srand(random_seed); //TODO: test that my threads are getting different random numbers (I know they're getting different seeds, but does this work?)
 
 		//Initalize the vectors and matrices we're going to use in the looping
-		SVector3 particle_position, position_shifts, position_rotated, position_shifted, position_difference_from_nearest_sphere,position_indices;
-		//SIntegerVector3 position_indices;
-		SMatrix33 rotation_matrix;
+		SVector3 particle_position, position_shifts, position_difference_from_nearest_sphere,position_indices;
 
-		while (microdosimetryreader.Next())
+
+		//Currently we haven't implemented supersampling. Have to think about how we recombine histograms and what not
+		//Start a loop for each time you sample the track
+		for (int i = 0; i < nSamples; i++)
 		{
-			//set the position shifts
-			position_shifts[0] = ((rand())*CPE_range*2/(RAND_MAX))-CPE_range;
-			position_shifts[1] = ((rand())*CPE_range*2/(RAND_MAX))-CPE_range;
-			position_shifts[2] = ((rand())*CPE_range*2/(RAND_MAX))-CPE_range;
 
-			//refresh the rotation matrix
-			uniform_random_rotation_matrix_optimized(rand()/RAND_MAX_F,rand()/RAND_MAX_F,rand()/RAND_MAX_F,&rotation_matrix);
+			//set the position shifts. No shift in Z axis, because we only want to shift on the X-Y surface of the box
+			position_shifts[0] = ((rand())*scoring_square_half_length*2/(RAND_MAX))-scoring_square_half_length;
+			position_shifts[1] = ((rand())*scoring_square_half_length*2/(RAND_MAX))-scoring_square_half_length;
+			position_shifts[2] = 0;
 
-			for (const ROOT::Math::XYZTVector & fourvector : XYZEdep)//(iterator = *XYZEdep->begin(); iterator != *XYZEdep->end(); iterator++)
+			while (trackReader.Next())
 			{
-				//TODO: Compare these two methods
-				//Because the ones below might not invoke the constructor
-				// where this might
-				//particle_position = fourvector.Vect();
-				
-				//My feeling is that this is slower than it needs to be because it goes component by component
-				//See if I'm able to fill the 3 vector with an iterator or something a little faster.
-				particle_position[0] = fourvector.X();
-				particle_position[1] = fourvector.Y();
-				particle_position[2] = fourvector.Z();
+				//Set the particle's position into a vector
+				particle_position[0] = *x+position_shifts[0];
+				particle_position[1] = *y+position_shifts[1];
+				particle_position[2] = *z;
 
-				if(fourvector.T() > 0) //check that there has been an energy deposition
-				{
-					//Transform particle posityion by the random rotation. Have to do this before shifting so the origin remains the same
-					position_rotated = rotation_matrix*particle_position;
-
-					//Shift the rotated particle position by a random x,y,z shift
-					position_shifted = position_rotated+position_shifts;
-
-					//Check if inside box
-					if (abs(position_shifted[0]) < abs(top_sphere_offset)+(scoring_sphere_diameter/2) && abs(position_shifted[1]) < abs(top_sphere_offset)+(scoring_sphere_diameter/2) && abs(position_shifted[2]) < abs(top_sphere_offset)+(scoring_sphere_diameter/2)) // if inside box
+				//Check if inside box
+					if (abs(particle_position[0]) < abs(top_sphere_offset)+(scoring_sphere_diameter/2) && abs(particle_position[1]) < abs(top_sphere_offset)+(scoring_sphere_diameter/2) && abs(particle_position[2]) < abs(top_sphere_offset)+(scoring_sphere_diameter/2)) // if inside box
 					{
 
 						//Convert from x,y,z to index position
-						position_indices[0] = TMath::Nint((position_shifted[0]-top_sphere_offset)/scoring_sphere_spacing);
-						position_indices[1] = TMath::Nint((position_shifted[1]-top_sphere_offset)/scoring_sphere_spacing);
-						position_indices[2] = TMath::Nint((position_shifted[2]-top_sphere_offset)/scoring_sphere_spacing);
+						position_indices[0] = TMath::Nint((particle_position[0]-top_sphere_offset)/scoring_sphere_spacing);
+						position_indices[1] = TMath::Nint((particle_position[1]-top_sphere_offset)/scoring_sphere_spacing);
+						position_indices[2] = TMath::Nint((particle_position[2]-top_sphere_offset)/scoring_sphere_spacing);
 
 						//Figure out if x,y,z coordinate is within sphere
 						//top_sphere_offset+(x_index*scoring_sphere_spacing) should give you the center of the sphere closest to your coordinate
 						position_difference_from_nearest_sphere = position_indices*scoring_sphere_spacing;
-						position_difference_from_nearest_sphere = position_difference_from_nearest_sphere+top_sphere_offset-position_shifted;
+						position_difference_from_nearest_sphere = position_difference_from_nearest_sphere+top_sphere_offset-particle_position;
 
 						if(ROOT::Math::Mag(position_difference_from_nearest_sphere) <= (scoring_sphere_diameter/2))
 						{
 							//Okay you are inside the sphere
 							index = position_indices[0] + (position_indices[1]*(num_spheres_linear)) + position_indices[2]*TMath::Power((num_spheres_linear),2); //Keep in mind that for the index it starts counting at zero
-							double_t lineal_energy = fourvector.T()/((2./3.)*scoring_sphere_diameter); //this should be ev/nm which is same a kev/um
+							double_t lineal_energy = *edep/((2./3.)*scoring_sphere_diameter); //this should be ev/nm which is same a kev/um
 							energy_map[index] += lineal_energy; 
-							//energy_map[index] += fourvector.T();
-							//inside += 1;
+						} 
+				 }
+			
+		  	}
+		//Has finished iterating over current event. Output data
+		trackReader.Restart(); //set iterator back to the beginning
+		std::unordered_map<int,double_t>::iterator it = energy_map.begin();
+		while (it != energy_map.cend())
+		{
+			lineal_histogram.Fill(it->second);
+			it++;
+		}
+		energy_map.clear(); //empty the map for next event
 
-						} //else {outside += 1;} 
-					}
-				}
-
-			}
-			//Has finished iterating over current event. Output data
-			std::unordered_map<int,double_t>::iterator it = energy_map.begin();
- 			while (it != energy_map.cend())
- 			{
- 				lineal_histogram.Fill(it->second);
- 				it++;
- 			}
- 			energy_map.clear(); //empty the map for next event
 		}
 
-		PMF_to_PDF(&lineal_histogram);
-		Prepare_for_Semilog(&lineal_histogram);
+	  return lineal_histogram;
 
-  	return lineal_histogram;
 	};
 
-   // Create the pool of workers
-   ROOT::TProcessExecutor workers(nthreads);
-   //Process the jobs and get a vector of the output
-   std::vector<TH1F> process_output = workers.Map(workItem, input_arguments_multithreading);
+
+	// Create the pool of workers
+  ROOT::TProcessExecutor workers(nthreads);
+  //Process the jobs and get a vector of the output
+  std::vector<TH1F> process_output = workers.Map(workItem, perthread_input_arguments);
 
    //THIS IS SO JANKY
-   //I should consider posting on the CERN Root forums to get a better solution
-   //in steps
+   //But according to the CERN forms this is the 'best' way 
    //1.) make a copy of the TH1F and point to it
    //2.) dynamically allocate a list
    //3.) use the new TH1F to merge the list
@@ -401,71 +382,50 @@ TH1F score_lineal_histogram_multithreaded_explicit(TString filepath, float_t sco
    TH1F h2 = *h;
    delete list; //Delete the list so I don't leak memory
 
+ 	 //PMF_to_PDF(&h2);
+	 //Prepare_for_Semilog(&h2);
+
    return h2;
+
 }
 
-void analyze_lineal_multithreaded_explicit()
+void CPU_lineal_test()
 {
 	int start_time = time(0); cout << "ROOT Program Beginning" << endl; 	
 
-	//Recall that sizes are in nm, so e3=um,e6=mm,e7=cm
-	// 1.) Scoring square half length 2.) Sphere spacing 3.) Sphere diameter 4.) CPE range
-	//auto output = score_lineal_histogram_multithreaded_explicit("/home/joseph/Documents/M1_local/trackfiles_1mil_livermore/co60_1cm_4vectortransformed_1000000.root",5e6, 5e3, 5e3, 50e3, 1, time(NULL), 1000000); //7.4 um is the mean nucleus diameter for the malignant nuclei of ptn. 1 slide 1 (i.e. it should match the results shown in the manuscript)
-	//auto output = new TH1F(score_lineal_histogram_multithreaded_explicit("/home/joseph/Documents/M1_local/trackfiles_1mil_livermore/co60_1cm_4vectortransformed_1000000.root",1e6, 8.82e3, 7.4e3, 5e6, 4, time(NULL), 10000));
-	TObjArray output_array(0);
-	Int_t noversamples = 1;
-	//Plotting
-	THStack *histo_stack = new THStack("histograms","");
-	//IF YOU WANT TO HAVE GARBAGE COLLECTION. Set the list as the owner. Except that being the case, then your objects won't appear since they die and go out of scope.
-	//output_array.SetOwner(true);
-	for (int i = 0; i < noversamples; i++)
-	{
-		//output_array.Add(new TH1F(score_lineal_histogram_multithreaded_explicit("/home/joseph/Documents/M1_local/trackfiles_1mil_livermore/co60_1cm_4vectortransformed_1000000.root",125e3, 17.5e3, 7.4e3, 5e6, 4, time(NULL), 1000000)));
-		output_array.Add(new TH1F(score_lineal_histogram_multithreaded_explicit("/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/co60_1cm_livermore_4vectortransformed_1000.root",5e6, 12e3, 12e3, 12e3, 4, time(NULL))));
-	}
-	TH1F* histo = (TH1F*)output_array[0]->Clone(); //I think the way clone works, is if the underlying object is on the heap, so is the clone. ALSO the original object takes ownership of the object. So if I delete the original object I lose the clone.
-	for (int i = 1; i < noversamples; i++)
-	{
-		histo->Add((TH1F*)output_array[i]);
-	}
-	//TH1F* histo = (TH1F*)output_list[0].Clone();
-	//histo->Merge(output_list);
-	//TH1F* histo_heap = new TH1F;
-	//histo_heap = histo;
-	histo_stack->Draw(); //Draw histogram
-	histo_stack->Add(histo);
-	histo_stack->GetXaxis()->SetTitle("y [keV/um]"); 
-	//histo_stack->GetXaxis()->SetTitle("edep_1 [keV]"); 
-	histo_stack->GetXaxis()->CenterTitle();
-	histo_stack->GetYaxis()->SetTitle("y*f(y)"); 
-	//histo_stack->GetXaxis()->SetTitle("edep_1 * f(edep_1)"); 
-	histo_stack->GetYaxis()->CenterTitle();
-	gPad->Modified();
-	gPad->SetLogx(); //Set the logarithmic axes appropriately
+	TH1F histo = score_lineal_voxel("/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/4060394578999227944_thread_0.root",5e3,5e3,2,50);
 
-	//Remember if you're making a bigger program you have to do memory management
-	//delete histo_stack; //delete output; /Don't do these if you want to plot the histogram otherwise it won't appear
-	
+	//Plotting
+	TCanvas *c = new TCanvas();
+	THStack *histo_stack = new THStack("histograms","");
+	histo_stack->Add(&histo);
+	histo_stack->Draw("nostack"); //Draw histogram
+	gPad->SetLogx(); //Set the logarithmic axes appropriately
+	gPad->Modified(); 
+	c->Print("mostrecenthist.png");
+
 	int end_time = time(0); cout << "ROOT Program Ending. Seconds elapsed: " << (end_time-start_time) << endl;	
 }
 
-__global__ void GPU_with_ROOT_test()
+/*__global__ void GPU_with_ROOT_test()
 {
 	printf("Yolo \n");
-}
+}*/
 
-void superimpose_tracks()
+void SuperTrack()
 {
 	//analyze_lineal_multithreaded_explicit();
-	cout << "Program continues to superimpose_tracks()" << endl;
-	GPU_with_ROOT_test<<<1,12>>>();
-	cudaDeviceSynchronize();
+	//cout << "Program continues to superimpose_tracks()" << endl;
+	//GPU_with_ROOT_test<<<1,12>>>();
+	//cudaDeviceSynchronize();
+
+	CPU_lineal_test();
 }
+
 # ifndef __CINT__
 int main()
 {
-	cout << "Program begins in main" << endl;
-  superimpose_tracks();
+  SuperTrack();
   return 0;
 }
 # endif
@@ -485,7 +445,7 @@ f->GetObject("microdosimetry",microdosimetry);
 //below takes a LONG time. There has to be a better way for variables that are already sorted.
 microdosimetry->Draw("eventID","eventID<1000"); //draw only the first 1000 events
 
-TString filepath = "/home/joseph/Documents/M1_local/trackfiles_1mil_livermore/co60_1cm.root";	
+TString filepath = "/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/4060394578999227944_thread_0.root";	
 TFile *f = TFile::Open(filepath);
 TTree *microdosimetry;
 f->GetObject("microdosimetry",microdosimetry);
