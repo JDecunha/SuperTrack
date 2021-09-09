@@ -26,6 +26,6 @@ add_executable(SuperTrack SuperTrack.cu)
 	target_include_directories(src PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 #Now link my libraries
-	target_link_libraries(SuperTrack PRIVATE src cuda_test ${ROOT_LIBRARIES})
+	target_link_libraries(SuperTrack PRIVATE src cuda_test ${ROOT_LIBRARIES} -lcurand)
 
 

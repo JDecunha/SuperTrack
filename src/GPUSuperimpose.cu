@@ -19,6 +19,9 @@
 #include <iterator>
 #include <tuple>
 #include <filesystem>
+//CUDA Libraries
+#include <cuda.h>
+#include <curand.h>
 
 //SMatrix and SVector are the fastest
 //ways to hold vectors and matrices in ROOT
@@ -114,7 +117,11 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		float *randomVals;
 		cudaMalloc(&randomVals,2*sizeof(float)*nSamples); //2 values for x,y times the number of oversamples needed
 		
-		//TODO: Invoke random number generation kernel call here
+		//Random number generation on GPU
+		curandGenerator_t randGenerator;
+		curandCreateGenerator(&randGenerator,CURAND_RNG_PSEUDO_DEFAULT); //consider changing this to Mersenne Twister later
+		curandSetPseudoRandomGeneratorSeed(randGenerator,random_seed+get<2>(input));
+		curandGenerateUniform(randGenerator,randomVals,2*nSamples);
 
 		//Allocate GPU only memory for the volume:edep paired list
 		long *volumeID;
@@ -124,6 +131,12 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		cudaMalloc(&edepInVolume,trackSize);
 
 		//TODO: Invoke superimposing kernel call here
+
+		//TODO: Consolidate results of superimposing into a hash table
+
+		//TODO: Transform hash table into a histogram
+
+		//TODO: Transfer histogram back to CPU memory and return
 
 
 	  	//Initialize the histogram
@@ -143,3 +156,4 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
    return lineal_histogram;
 
 }
+
