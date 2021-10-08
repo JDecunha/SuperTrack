@@ -199,6 +199,19 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		curandGenerateUniform(randGenerator,randomVals,2*nSamples);
 		curandDestroyGenerator(randGenerator);
 
+		//Create my logarithmically spaced bins for the histogram
+		int nbins = 200; float binLowerMagnitude = -1; float binUpperMagnitude = 2;
+		double *logBins;
+		cudaMallocManaged(&logBins, (nbins+1)*sizeof(double));
+		LogSpace(binLowerMagnitude,binUpperMagnitude,nbins,logBins);
+		cudaMemPrefetchAsync(logBins,(nbins+1)*sizeof(double),deviceId);
+
+		//Transform consolidated key/values lists into a histogram
+		void* histogramTempStorage = NULL;
+		size_t tempStorageSize = 0;
+		int* histogramVals;
+		cudaMallocManaged(&histogramVals,nbins*sizeof(int));
+
 		//Allocate GPU only memory for the volume:edep paired list
 		long *volumeID;
 		double *edepInVolume;
@@ -207,6 +220,9 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		cudaMalloc(&edepInVolume,trackSize);
 
 		cudaDeviceSynchronize();
+
+		//for (int i = 0; i < 100; i++)
+		//{
 
 		//Invoke superimposing kernel call here
 		SuperimposeTrack<<<24,32>>>(top_sphere_offset,scoring_sphere_diameter,num_spheres_linear,randomVals,x,y,z,edep,volumeID,edepInVolume,nVals,0);
@@ -222,36 +238,26 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
 		thrust::sort_by_key(thrust::device,volumeID,volumeID+nVals,edepInVolume);
 		thrust::pair<long*,double*> endOfReducedList;
-		thrust::reduce_by_key(thrust::device,volumeID,volumeID+nVals,edepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions
+		endOfReducedList = thrust::reduce_by_key(thrust::device,volumeID,volumeID+nVals,edepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions
 
+		//First call to the histogram allocates the temp storage and size
+		cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+
+		//Allocate the temporary storage
+		cudaMalloc(&histogramTempStorage,tempStorageSize); 
+
+		//Second call populates the histogram
+		cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
 		cudaDeviceSynchronize();
+		//}
 
-		std::cout << "Volume #: " << consolidatedVolumeID[0] << " Net total edep: " << consolidatedEdepInVolume[0] << std::endl;
-		std::cout << "Volume #: " << consolidatedVolumeID[1] << " Net total edep: " << consolidatedEdepInVolume[1] << std::endl;
-		std::cout << "Volume #: " << consolidatedVolumeID[2] << " Net total edep: " << consolidatedEdepInVolume[2] << std::endl;
-		std::cout << "Volume #: " << consolidatedVolumeID[3] << " Net total edep: " << consolidatedEdepInVolume[3] << std::endl;
-		std::cout << "Volume #: " << consolidatedVolumeID[4] << " Net total edep: " << consolidatedEdepInVolume[4] << std::endl;
-		std::cout << "Volume #: " << consolidatedVolumeID[5] << " Net total edep: " << consolidatedEdepInVolume[5] << std::endl;
-		std::cout << "Volume #: " << consolidatedVolumeID[6] << " Net total edep: " << consolidatedEdepInVolume[6] << std::endl;
-		std::cout << "Volume #: " << consolidatedVolumeID[7] << " Net total edep: " << consolidatedEdepInVolume[7] << std::endl;
-
-		
-
-		/*for (long i = 0; i < *endOfReducedList.first; i++)
+		//Read out histogram
+		for (int i = 0; i < nbins; i++)
 		{
-	    	std::cout << "Volume #: " << consolidatedVolumeID[i] << "Net total edep: " << consolidatedEdepInVolume[i] << std::endl;
-		}*/
-
-		//TODO: Transform consolidated key/values lists into a histogram
-		cub::DeviceHistogram::HistogramEven();
-
-
-		//TODO: Transfer histogram back to CPU memory and return
+			std::cout << "Bin: " << logBins[i] << " Counts: " << histogramVals[i] << std::endl;
+		}
 
 		//TODO: close my file at some point
-
-		cudaDeviceSynchronize();
-
 
 	  	//Initialize the histogram
 		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);

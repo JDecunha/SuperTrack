@@ -13,6 +13,7 @@ void BinLogX(TH1F* h);
 void BinLogXMultithread(std::shared_ptr<TH1F> h);
 void PMF_to_PDF(TH1* h);
 void Prepare_for_Semilog(TH1* h);
+void LogSpace(float bottom_order_mag, float top_order_mag, int nbins, double* bins);
 
 //Other utility functions
 void uniform_random_rotation_matrix_optimized(float x0,float x1,float x2, SMatrix33* matrix);

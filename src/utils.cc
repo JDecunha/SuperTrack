@@ -45,6 +45,17 @@ void BinLogXMultithread(std::shared_ptr<TH1F> h)
    delete[] new_bins;
 } 
 
+void LogSpace(float bottom_order_mag, float top_order_mag, int nbins, double* bins)
+{
+	//Determine the bin width
+	double width = (top_order_mag-bottom_order_mag)/(nbins);
+
+	for (int i = 0; i <= nbins; i++)
+	{
+		bins[i] = TMath::Power(10,bottom_order_mag+(i*width));
+	}
+}
+
 void PMF_to_PDF(TH1* h)
 {
 	//This converts a probability mass function to a probability density function
