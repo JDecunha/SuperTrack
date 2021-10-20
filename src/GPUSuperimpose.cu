@@ -98,6 +98,18 @@ __global__ void SuperimposeTrack(double greatestSphereOffset, double sphereDiame
 	}
 }
 
+__global__ void AccumulateHistogramVals(int* temp,int* accumulated,int N)
+{
+	//Determine index and stride
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	for (int i = index; i < N; i+=stride)
+	{
+		accumulated[i] = accumulated[i]+temp[i];
+	}
+}
+
 
 TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 1, Long_t random_seed = time(NULL))
 {
@@ -207,10 +219,11 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		cudaMemPrefetchAsync(logBins,(nbins+1)*sizeof(double),deviceId);
 
 		//Transform consolidated key/values lists into a histogram
-		void* histogramTempStorage = NULL;
-		size_t tempStorageSize = 0;
 		int* histogramVals;
+		int* histogramValsAccumulated;
 		cudaMallocManaged(&histogramVals,nbins*sizeof(int));
+		//TODO: I need to zero the histogram vals accumulated as well
+		cudaMallocManaged(&histogramValsAccumulated,nbins*sizeof(int));
 
 		//Allocate GPU only memory for the volume:edep paired list
 		long *volumeID;
@@ -219,21 +232,24 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		cudaMalloc(&volumeID,sizeof(long)*nVals);
 		cudaMalloc(&edepInVolume,trackSize);
 
-		cudaDeviceSynchronize();
-
-		//for (int i = 0; i < 100; i++)
-		//{
-
-		//Invoke superimposing kernel call here
-		SuperimposeTrack<<<24,32>>>(top_sphere_offset,scoring_sphere_diameter,num_spheres_linear,randomVals,x,y,z,edep,volumeID,edepInVolume,nVals,0);
-
+		//Allocate memory for the thrust sorted and reduced list
 		//Create the output vectors for after thrust has summed my raw data into a consolidated list of volumeID:edep
 		long *consolidatedVolumeID;
 		double *consolidatedEdepInVolume;
-
 		//TODO: change this back after debugging
 		cudaMallocManaged(&consolidatedVolumeID,sizeof(long)*nVals);
 		cudaMallocManaged(&consolidatedEdepInVolume,trackSize);
+
+		cudaDeviceSynchronize();
+
+		for (int i = 0; i < 10; i++)
+		{
+		//Allocate histogram memory
+		void* histogramTempStorage = NULL;
+		size_t tempStorageSize = 0;
+
+		//Invoke superimposing kernel call here
+		SuperimposeTrack<<<60,256>>>(top_sphere_offset,scoring_sphere_diameter,num_spheres_linear,randomVals,x,y,z,edep,volumeID,edepInVolume,nVals,i);
 
 		//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
 		thrust::sort_by_key(thrust::device,volumeID,volumeID+nVals,edepInVolume);
@@ -248,13 +264,17 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 		//Second call populates the histogram
 		cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+
+		//Accumulate the histogram values
+		AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
+
 		cudaDeviceSynchronize();
-		//}
+		}
 
 		//Read out histogram
 		for (int i = 0; i < nbins; i++)
 		{
-			std::cout << "Bin: " << logBins[i] << " Counts: " << histogramVals[i] << std::endl;
+			std::cout << "Bin: " << logBins[i] << " Counts: " << histogramValsAccumulated[i] << std::endl;
 		}
 
 		//TODO: close my file at some point
