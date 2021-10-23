@@ -29,7 +29,26 @@
 //CUB (Cuda UnBound)
 #include <cub/cub.cuh>
 
+//
+//Structs and typedefs
+//
 
+struct Track
+{ 
+	double x;
+	double y;
+	double z;
+	double edep; 
+};
+typedef struct Track Track; //this is a typdef which maps from struct Track --> Track. Just saves us from writing struct when we refer to the struct later.
+
+struct SphericalGeometry
+{
+	double greatestSphereOffset;
+	double sphereRadius;
+	long numSpheresLinear;
+};
+typedef struct SphericalGeometry SphericalGeometry;
 
 //TODO: Change this to work with a C-style struct later, so x,y,z,edep are all one entry
 __global__ void SuperimposeTrack(double greatestSphereOffset, double sphereDiameter, long numSpheresLinear, float* randomVals, double* x, double* y, double* z, double* edep,long *volumeID, double *edepOutput, long numElements,int oversampleIterationNumber)
@@ -98,7 +117,169 @@ __global__ void SuperimposeTrack(double greatestSphereOffset, double sphereDiame
 	}
 }
 
-__global__ void AccumulateHistogramVals(int* temp,int* accumulated,int N)
+void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track **hostTrack, Track **deviceTrack)
+{
+	//Open the file in each process and make a Tree Reader
+	TFile f = TFile(std::get<3>(input));
+	TTreeReader trackReader("Tracks", &f);
+	trackReader.SetEntriesRange(std::get<0>(input),std::get<1>(input));
+	TTreeReaderValue<double_t> xReader(trackReader, "x [nm]");
+	TTreeReaderValue<double_t> yReader(trackReader, "y [nm]");
+	TTreeReaderValue<double_t> zReader(trackReader, "z [nm]");
+	TTreeReaderValue<double_t> edepReader(trackReader, "edep [eV]");
+
+	std::cout << "thread #: " << std::get<2>(input) << " starting at: " << std::to_string(std::get<0>(input)) << std::endl;
+
+	//Determine size of arrays. Define them. Then allcate unified memory on CPU and GPU
+	long nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
+	size_t trackSize = nVals * sizeof(double);
+	size_t trackStructSize = nVals*sizeof(Track);
+
+	//malloc and cudaMalloc our arrays respectively
+	*hostTrack = (Track *)malloc(trackStructSize);
+	cudaMalloc((void**)deviceTrack,trackStructSize);
+
+	//Fill the unified memory arrays from the CPU
+	for (long loopnum = 0; trackReader.Next(); loopnum++) 
+	{
+		(*hostTrack)[loopnum].x = *xReader;
+		(*hostTrack)[loopnum].y = *yReader;
+		(*hostTrack)[loopnum].z = *zReader;
+		(*hostTrack)[loopnum].edep = *edepReader;
+	}
+
+	//Copy track to GPU memory
+	cudaMemcpy(*deviceTrack,*hostTrack,trackStructSize,cudaMemcpyHostToDevice);
+
+	//TODO: free host track, maybe we can't free it yet because it's still being copied right
+}
+
+void GenerateRandomXYShift(const std::tuple<Int_t,Int_t,Int_t,TString> &input, float **randomVals, const int &nSamples, const long &random_seed)
+{
+	cudaMalloc(randomVals,2*sizeof(float)*nSamples); 
+	
+	//Random number generation on GPU
+	curandGenerator_t randGenerator;
+	curandCreateGenerator(&randGenerator,CURAND_RNG_PSEUDO_DEFAULT); //consider changing this to Mersenne Twister later
+	curandSetPseudoRandomGeneratorSeed(randGenerator,random_seed+std::get<2>(input));
+	curandGenerateUniform(randGenerator,*randomVals,2*nSamples);
+	curandDestroyGenerator(randGenerator);
+	cudaDeviceSynchronize();
+}
+
+void GenerateLogHistogram(double **logBins, int **histogramVals, int **histogramValsAccumulated, int nbins, float binLowerMagnitude, float binUpperMagnitude)
+{
+	//Get the device Id for active GPU
+	int deviceId;
+	cudaGetDevice(&deviceId);   
+
+	//Fill the log bins and send to the device
+	cudaMallocManaged(logBins, (nbins+1)*sizeof(double));
+	LogSpace(binLowerMagnitude,binUpperMagnitude,nbins,*logBins);
+	cudaMemPrefetchAsync(*logBins,(nbins+1)*sizeof(double),deviceId);
+
+	//TODO: Change to unmanaged memory later
+	cudaMallocManaged(histogramVals,nbins*sizeof(int));
+	cudaMallocManaged(histogramValsAccumulated,nbins*sizeof(int));
+
+	//Set arrays to zero
+	cudaMemset(*histogramVals,0,nbins*sizeof(int));
+	cudaMemset(*histogramValsAccumulated,0,nbins*sizeof(int));
+}
+
+__global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, float* randomVals, Track *inputTrack, Track *outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
+{
+	//This function
+	//1.) Applies the random shift to the x,y coordinates
+	//2.) Checks which edep events are in the box
+	//3.) Performs stream compaction on those events which are in the box
+	//We are using stream compaction to avoid a monolithic kernel with large blocks within if-statements which reduces warp efficiency
+
+	//Determine index and stride
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	//Convert random shifts in to appropriate range
+	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*greatestSphereOffset*2)-greatestSphereOffset);
+	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*greatestSphereOffset*2)-greatestSphereOffset);
+	//Put definitions outside of for-loop to prevent repeat constructor calls
+	double x_shifted; double y_shifted; int outputIndex;
+
+
+
+	//Loop over all the energy deposition points
+	for (int i = index; i < numElements; i+=stride)
+	{
+		//Apply random shift
+		x_shifted = inputTrack[i].x + x_shift;
+		y_shifted = inputTrack[i].y + y_shift;
+		//printf("x: %f, y: %f, x_shift: %f \n",inputTrack[i].x,inputTrack[i].y,x_shift);
+
+		//Check if in box
+		if (abs(x_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(y_shifted) < abs(greatestSphereOffset)+(sphereRadius))
+		{
+			//Atomically add to the global counter for the output array length
+			outputIndex = atomicAdd(numElementsCompacted,1);
+
+			//Copy the track inside the box over to the new array
+			outputTrack[outputIndex].x = x_shifted;
+			outputTrack[outputIndex].y = y_shifted;
+			outputTrack[outputIndex].z = inputTrack[i].z;
+			outputTrack[outputIndex].edep = inputTrack[i].edep;
+		}
+	}
+}
+__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, long *volumeID, double *edepOutput, int *numElementsCompacted)
+{
+	double sphereDiameter = sphereRadius*2;
+	double linealDenominator = (2./3.)*sphereDiameter; 
+
+	//Determine index and stride
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	//Loop over all the energy deposition points
+	for (long i = index; i < *numElements; i+=stride)
+	{
+		//Convert position to index in the grid of spheres
+		//printf("x_shifted: %f \n",x_shifted);
+		long xIndex = llround((inputTrack[i].x-greatestSphereOffset)/sphereDiameter);
+		long yIndex = llround((inputTrack[i].y-greatestSphereOffset)/sphereDiameter);
+		long zIndex = llround((inputTrack[i].z-greatestSphereOffset)/sphereDiameter);
+		
+		//Determine the location of the nearest sphere in the grid (with 0,0,0 being the top left sphere, different coordinate system than the ptcls are in)
+		double nearestSphereX = xIndex*sphereDiameter;
+		double nearestSphereY = yIndex*sphereDiameter;
+		double nearestSphereZ = zIndex*sphereDiameter;
+
+		//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
+		//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
+		//Another aside: calculating in cubes would reduce complexity as well
+		double distFromNearestSphereX = nearestSphereX-(inputTrack[i].x-greatestSphereOffset);
+		double distFromNearestSphereY = nearestSphereY-(inputTrack[i].y-greatestSphereOffset); 
+		double distFromNearestSphereZ = nearestSphereZ-(inputTrack[i].z-greatestSphereOffset); 
+
+		//Determine if inside the nearest sphere
+		double dist = pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2);
+		dist = sqrt(dist);
+
+		if (dist <= sphereRadius)
+		{
+			//Determine the Index of the sphere hit
+			long sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
+			
+			//Atomically add to the global counter for the output array length
+			int outputIndex = atomicAdd(numElementsCompacted,1);
+
+			//Write to volumeID and edepOutput
+			volumeID[outputIndex] = sphereHitIndex;
+			edepOutput[outputIndex] = inputTrack[i].edep/linealDenominator; //this should be ev/nm which is same a kev/um
+			//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
+		}
+	}
+}
+
+__global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N)
 {
 	//Determine index and stride
  	int index = threadIdx.x + blockIdx.x * blockDim.x;
@@ -109,9 +290,37 @@ __global__ void AccumulateHistogramVals(int* temp,int* accumulated,int N)
 		accumulated[i] = accumulated[i]+temp[i];
 	}
 }
+__global__ void NonsenseKernel(float *value)
+{
+	printf("Took in the value:%f", value[0]);
+	/*int lastval = 0;
+	for (int i = 0; i < 10; i++)
+	{
+		lastval = atomicAdd(atomicValue,1);
+		printf("Last atomic value %d: \n",lastval);
+	}*/
+}
 
+void testfunction(curandGenerator_t &gen,float *vals)
+{
+	curandGenerateUniform(gen,vals,2*20000);
+	cudaDeviceSynchronize();
+}
 
-TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 1, Long_t random_seed = time(NULL))
+void mallocfunction(float **vals)
+{
+	//okay wait, so calling &vals in here, is the pointer to the local object, and not the address of vals
+	//Wow! so I pass in a pointer to a pointer. And then feed that to cudaMalloc direclty.
+	//Intuitively what this means it memory address pointing to pointer of array of floats --> memory address point to array of floats --> start of floats
+	//We had to do this because of the way the malloc works. In c you can't really pass by reference, so when you're mallocing something
+	//you need to pass a pointer, to the pointer that you then want to work on
+	//I promise it makes sense if you think about it for a moment.
+
+	cudaMalloc(vals,2*sizeof(float)*20000); 
+	cudaDeviceSynchronize();
+}
+
+TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 20000, Long_t random_seed = time(NULL))
 {
 	//open the file and retrieve the trees
 	TFile f = TFile(filepath);
@@ -122,7 +331,6 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	//Populate our tuple with the first entry, last entry, and random seed for each thread
 	std::vector<std::tuple<Int_t,Int_t,Int_t,TString>> perthread_input_arguments;
 
-	//TODO: update the GEANT code to use long long for the event index
 	if (nTracksInFile <= nthreads)
 	{ 
 		long start_entry_val = 0;
@@ -149,126 +357,87 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	int num_spheres_linear = TMath::Ceil(((scoring_square_half_length*2)/scoring_sphere_spacing)); 
 	long long int num_spheres_total = TMath::Power((num_spheres_linear),3);
 	double_t top_sphere_offset = -(((float(num_spheres_linear))/2)-0.5)*scoring_sphere_spacing;
+	float_t scoringSphereRadius = scoring_sphere_diameter/2;
 
 	//We are done reading the Tree single threaded. Close it.
 	f.Close();
 
-
-	
 	auto workItem = [=](std::tuple<Int_t,Int_t,Int_t,TString> input) //the = sign captures everything in the enclosing function by value. Meaning it makes a process local copy.
 	{
-		//Open the file in each process and make a Tree Reader
-		TFile f = TFile(std::get<3>(input));
-		TTreeReader trackReader("Tracks", &f);
-		trackReader.SetEntriesRange(std::get<0>(input),std::get<1>(input));
-		TTreeReaderValue<double_t> xReader(trackReader, "x [nm]");
-		TTreeReaderValue<double_t> yReader(trackReader, "y [nm]");
-		TTreeReaderValue<double_t> zReader(trackReader, "z [nm]");
-		TTreeReaderValue<double_t> edepReader(trackReader, "edep [eV]");
+		//Calculate size information for memory allocations
+		int nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
+		size_t trackSize = nVals * sizeof(double); size_t trackStructSize = nVals *sizeof(Track);
 
-		std::cout << "thread #: " << std::get<2>(input) << " starting at: " << std::to_string(std::get<0>(input)) << std::endl;
+		//Define local and GPU track pointers
+		Track *hostTrack; Track *deviceTrack; 
+		LoadTrack(input, &hostTrack, &deviceTrack); //load track from disk and copy to GPU
 
-		//Determine size of arrays. Define them. Then allcate unified memory on CPU and GPU
-		long nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
-		size_t trackSize = nVals * sizeof(double);
-
-		double *x;
-		double *y;
-		double *z;
-		double *edep;
-
-		cudaMallocManaged(&x,trackSize);
-		cudaMallocManaged(&y,trackSize);
-		cudaMallocManaged(&z,trackSize);
-		cudaMallocManaged(&edep,trackSize);
-
-		//Fill the unified memory arrays from the CPU
-		for (long loopnum = 0; trackReader.Next(); loopnum++) 
-		{
-			x[loopnum] = *xReader;
-			y[loopnum] = *yReader;
-			z[loopnum] = *zReader;
-			edep[loopnum] = *edepReader;
-		}
-
-		//Get the device Id for active GPU
-		int deviceId;
-		cudaGetDevice(&deviceId);    
-		//Prefetch memory by the GPU
-		cudaMemPrefetchAsync(x,trackSize,deviceId);
-		cudaMemPrefetchAsync(y,trackSize,deviceId);
-		cudaMemPrefetchAsync(z,trackSize,deviceId);
-		cudaMemPrefetchAsync(edep,trackSize,deviceId);
-
-		//Allocate GPU only memory for the random numbers
-		float *randomVals;
-		cudaMalloc(&randomVals,2*sizeof(float)*nSamples); //2 values for x,y times the number of oversamples needed
+		//Allocate memory for the tracks found to be within the box
+		Track *inBoxTrack;
+		cudaMalloc((void**)inBoxTrack,trackStructSize); 
 		
-		//Random number generation on GPU
-		curandGenerator_t randGenerator;
-		curandCreateGenerator(&randGenerator,CURAND_RNG_PSEUDO_DEFAULT); //consider changing this to Mersenne Twister later
-		curandSetPseudoRandomGeneratorSeed(randGenerator,random_seed+std::get<2>(input));
-		curandGenerateUniform(randGenerator,randomVals,2*nSamples);
-		curandDestroyGenerator(randGenerator);
+		//Allocate GPU only memory for random numbers
+		float *randomVals; 
+		GenerateRandomXYShift(input, &randomVals, nSamples, random_seed); //Allocate and fill with random numbers
 
-		//Create my logarithmically spaced bins for the histogram
-		int nbins = 200; float binLowerMagnitude = -1; float binUpperMagnitude = 2;
-		double *logBins;
-		cudaMallocManaged(&logBins, (nbins+1)*sizeof(double));
-		LogSpace(binLowerMagnitude,binUpperMagnitude,nbins,logBins);
-		cudaMemPrefetchAsync(logBins,(nbins+1)*sizeof(double),deviceId);
-
-		//Transform consolidated key/values lists into a histogram
-		int* histogramVals;
-		int* histogramValsAccumulated;
-		cudaMallocManaged(&histogramVals,nbins*sizeof(int));
-		//TODO: I need to zero the histogram vals accumulated as well
-		cudaMallocManaged(&histogramValsAccumulated,nbins*sizeof(int));
-
+		//Define histograms
+		double *logBins; int* histogramVals; int* histogramValsAccumulated; 
+		int nbins = 200; float binLowerMagnitude = -1; float binUpperMagnitude = 2; //Set histogram parameters
+		GenerateLogHistogram(&logBins, &histogramVals, &histogramValsAccumulated, nbins, binLowerMagnitude, binUpperMagnitude);
+		
 		//Allocate GPU only memory for the volume:edep paired list
-		long *volumeID;
-		double *edepInVolume;
-
-		cudaMalloc(&volumeID,sizeof(long)*nVals);
-		cudaMalloc(&edepInVolume,trackSize);
+		long *volumeID; cudaMalloc(&volumeID,sizeof(long)*nVals);
+		double *edepInVolume; cudaMalloc(&edepInVolume,trackSize);
 
 		//Allocate memory for the thrust sorted and reduced list
-		//Create the output vectors for after thrust has summed my raw data into a consolidated list of volumeID:edep
-		long *consolidatedVolumeID;
-		double *consolidatedEdepInVolume;
-		//TODO: change this back after debugging
-		cudaMallocManaged(&consolidatedVolumeID,sizeof(long)*nVals);
-		cudaMallocManaged(&consolidatedEdepInVolume,trackSize);
+		//TODO: change back to regular memory after debugging
+		long *consolidatedVolumeID; cudaMallocManaged(&consolidatedVolumeID,sizeof(long)*nVals);
+		double *consolidatedEdepInVolume; cudaMallocManaged(&consolidatedEdepInVolume,trackSize);
+		
+		//Todo: Create the output vectors for after thrust has summed my raw data into a consolidated list of volumeID:edep, rather than redifining each time
+
+		int *NumInBox; int *NumInSpheres;
+		cudaMallocManaged(&NumInBox,sizeof(int)); cudaMallocManaged(&NumInSpheres,sizeof(int));
 
 		cudaDeviceSynchronize();
 
-		for (int i = 0; i < 10; i++)
+		for (int j = 0; j < 1; j++)
 		{
-		//Allocate histogram memory
-		void* histogramTempStorage = NULL;
-		size_t tempStorageSize = 0;
+			//Allocate histogram memory
+			void* histogramTempStorage = NULL;
+			size_t tempStorageSize = 0;
 
-		//Invoke superimposing kernel call here
-		SuperimposeTrack<<<60,256>>>(top_sphere_offset,scoring_sphere_diameter,num_spheres_linear,randomVals,x,y,z,edep,volumeID,edepInVolume,nVals,i);
+			//New track. Zero values
+			cudaMemset(NumInBox,0,sizeof(int));
+			cudaMemset(NumInSpheres,0,sizeof(int));
+			cudaDeviceSynchronize();
 
-		//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
-		thrust::sort_by_key(thrust::device,volumeID,volumeID+nVals,edepInVolume);
-		thrust::pair<long*,double*> endOfReducedList;
-		endOfReducedList = thrust::reduce_by_key(thrust::device,volumeID,volumeID+nVals,edepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions
+			FilterInScoringBox<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomVals,deviceTrack,inBoxTrack,nVals,NumInBox,j);
+			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,volumeID,edepInVolume,NumInSpheres);
 
-		//First call to the histogram allocates the temp storage and size
-		cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+			cudaDeviceSynchronize();
 
-		//Allocate the temporary storage
-		cudaMalloc(&histogramTempStorage,tempStorageSize); 
+			std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
 
-		//Second call populates the histogram
-		cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+			
+			//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
+			thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume);
+			thrust::pair<long*,double*> endOfReducedList;
+			endOfReducedList = thrust::reduce_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions
+			
+			//First call to the histogram allocates the temp storage and size
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
 
-		//Accumulate the histogram values
-		AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
+			//Allocate the temporary storage
+			cudaMalloc(&histogramTempStorage,tempStorageSize); 
 
-		cudaDeviceSynchronize();
+			//Second call populates the histogram
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+
+			//Accumulate the histogram values
+			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
+			
+			cudaDeviceSynchronize();
 		}
 
 		//Read out histogram
