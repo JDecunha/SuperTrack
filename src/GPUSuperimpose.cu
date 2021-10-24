@@ -198,14 +198,13 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 	//Determine index and stride
  	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
-
+	//printf("index %d, stride %d \n",index,stride);
+	
 	//Convert random shifts in to appropriate range
 	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*greatestSphereOffset*2)-greatestSphereOffset);
 	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*greatestSphereOffset*2)-greatestSphereOffset);
 	//Put definitions outside of for-loop to prevent repeat constructor calls
-	double x_shifted; double y_shifted; int outputIndex;
-
-
+	double x_shifted; double y_shifted; //int outputIndex;
 
 	//Loop over all the energy deposition points
 	for (int i = index; i < numElements; i+=stride)
@@ -213,14 +212,20 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 		//Apply random shift
 		x_shifted = inputTrack[i].x + x_shift;
 		y_shifted = inputTrack[i].y + y_shift;
-		//printf("x: %f, y: %f, x_shift: %f \n",inputTrack[i].x,inputTrack[i].y,x_shift);
+
+
+		/*if (inputTrack[i].x != 0)
+		{
+			printf("x: %f",inputTrack[i].x);
+		}*/
 
 		//Check if in box
 		if (abs(x_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(y_shifted) < abs(greatestSphereOffset)+(sphereRadius))
 		{
-			//Atomically add to the global counter for the output array length
-			outputIndex = atomicAdd(numElementsCompacted,1);
 
+			//Atomically add to the global counter for the output array length
+			int outputIndex = atomicAdd(numElementsCompacted,1);
+			//printf("current loop i: %d",i);
 			//Copy the track inside the box over to the new array
 			outputTrack[outputIndex].x = x_shifted;
 			outputTrack[outputIndex].y = y_shifted;
@@ -320,6 +325,28 @@ void mallocfunction(float **vals)
 	cudaDeviceSynchronize();
 }
 
+void readHostTrack(Track *hostTrack)
+{
+	for(int i = 0; i < 100000; i++)
+	{
+		std::cout << hostTrack[i].x << std::endl;
+	}
+}
+__global__ void readDeviceTrack(Track *deviceTrack)
+{
+	for(int i = 0;i<100000;i++)
+	{
+		printf("%f \n",deviceTrack[i].x);
+	}
+}
+
+__global__ void indexTestingKernel()
+{
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+	printf("index %d, stride %d \n",index,stride);
+}
+
 TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 20000, Long_t random_seed = time(NULL))
 {
 	//open the file and retrieve the trees
@@ -347,6 +374,17 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	}
 	else
 	{
+		long start_entry_val = 0;
+		TTreeReader trackIndexReader("Track index", &f);
+		TTreeReaderValue<long long> end_entry_val(trackIndexReader, "index");
+
+		for (Int_t i = 0; i < nthreads; i++)
+		{
+			trackIndexReader.Next();
+			perthread_input_arguments.push_back(std::make_tuple(start_entry_val,*end_entry_val-1,i,filepath));
+			//Wcout << "thread: " << i << " start val: " << start_entry_val << " end val: " << *end_entry_val-1 << endl;
+			start_entry_val = *end_entry_val;
+		}
 		std::cout << "Number of tracks in file greater than requested threads. Case not yet implemented." << std::endl;
 	}
 
@@ -371,10 +409,11 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		//Define local and GPU track pointers
 		Track *hostTrack; Track *deviceTrack; 
 		LoadTrack(input, &hostTrack, &deviceTrack); //load track from disk and copy to GPU
+		//readDeviceTrack<<<1,1>>>(deviceTrack);
 
 		//Allocate memory for the tracks found to be within the box
 		Track *inBoxTrack;
-		cudaMalloc((void**)inBoxTrack,trackStructSize); 
+		cudaMalloc(&inBoxTrack,trackStructSize); 
 		
 		//Allocate GPU only memory for random numbers
 		float *randomVals; 
@@ -412,14 +451,15 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			cudaMemset(NumInSpheres,0,sizeof(int));
 			cudaDeviceSynchronize();
 
-			FilterInScoringBox<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomVals,deviceTrack,inBoxTrack,nVals,NumInBox,j);
-			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,volumeID,edepInVolume,NumInSpheres);
+			//indexTestingKernel<<<32,32>>>();
 
+			FilterInScoringBox<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomVals,deviceTrack,inBoxTrack,nVals,NumInBox,j);	
+			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,volumeID,edepInVolume,NumInSpheres);
+			
+			//So it looks like my histogram values change if I don't synchronize prior to launching the thrust calls
+			//I guess my previous kernels start while the thrust call is invoked?
 			cudaDeviceSynchronize();
 
-			std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
-
-			
 			//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
 			thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume);
 			thrust::pair<long*,double*> endOfReducedList;
@@ -438,14 +478,19 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
 			
 			cudaDeviceSynchronize();
+			std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
 		}
+
+		int number_of_values_in_histogram = 0;
 
 		//Read out histogram
 		for (int i = 0; i < nbins; i++)
 		{
+			number_of_values_in_histogram += histogramValsAccumulated[i];
 			std::cout << "Bin: " << logBins[i] << " Counts: " << histogramValsAccumulated[i] << std::endl;
 		}
 
+		std::cout << number_of_values_in_histogram << std::endl;
 		//TODO: close my file at some point
 
 	  	//Initialize the histogram
