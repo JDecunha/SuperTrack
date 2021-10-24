@@ -50,7 +50,15 @@ struct SphericalGeometry
 };
 typedef struct SphericalGeometry SphericalGeometry;
 
-
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 
 void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track **hostTrack, Track **deviceTrack)
 {
@@ -133,8 +141,8 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 	//Put definitions outside of for-loop to prevent repeat constructor calls
 	double x_shifted; double y_shifted; int outputIndex;
 
-	//Determine index and stride
- 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	//Determine index and strid
+  int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
 
 	//Counters for shared memory atomics
@@ -263,7 +271,7 @@ __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRa
 	}
 }
 
-__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, int *trackIdInSphere, long *volumeID, double *edepOutput)
+__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, int *trackIdInSphere, uint64_t *volumeID, double *edepOutput)
 {
 	//move all of the variable definitions out of the for loop
 	long xIndex, yIndex, zIndex, sphereHitIndex;
@@ -277,7 +285,7 @@ __global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRad
 	int stride = blockDim.x * gridDim.x;
 
 	//Loop over all the energy deposition points
-	for (long i = index; i < *numElements; i+=stride)
+	for (uint64_t i = index; i < *numElements; i+=stride)
 	{		
 		xIndex = llrint((inputTrack[trackIdInSphere[i]].x-greatestSphereOffset)/sphereDiameter);
 		yIndex = llrint((inputTrack[trackIdInSphere[i]].y-greatestSphereOffset)/sphereDiameter);
@@ -291,6 +299,15 @@ __global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRad
 		edepOutput[i] = inputTrack[trackIdInSphere[i]].edep/linealDenominator; //this should be ev/nm which is same a kev/um
 	}
 }
+
+struct CUBAddOperator
+{
+    template <typename T>
+    CUB_RUNTIME_FUNCTION __forceinline__
+    T operator()(const T &a, const T &b) const {
+        return a+b;
+    }
+};
 
 __global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N)
 {
@@ -439,12 +456,17 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		GenerateLogHistogram(&logBins, &histogramVals, &histogramValsAccumulated, nbins, binLowerMagnitude, binUpperMagnitude);
 		
 		//Allocate GPU only memory for the volume:edep paired list
-		long *volumeID; cudaMalloc(&volumeID,sizeof(long)*nVals);
+		uint64_t *volumeID; cudaMalloc(&volumeID,sizeof(uint64_t)*nVals);
 		double *edepInVolume; cudaMalloc(&edepInVolume,trackSize);
 
 		//Allocate memory for the volume:edep paired list after Thrust compacts it
 		//TODO: change back to regular memory after debugging
-		long *consolidatedVolumeID; cudaMalloc(&consolidatedVolumeID,sizeof(long)*nVals);
+		uint64_t *sortedVolumeID; cudaMalloc(&sortedVolumeID,sizeof(uint64_t)*nVals);
+		double *sortedEdepInVolume; cudaMalloc(&sortedEdepInVolume,trackSize);
+
+			//Allocate memory for the volume:edep paired list after Thrust compacts it
+		//TODO: change back to regular memory after debugging
+		uint64_t *consolidatedVolumeID; cudaMalloc(&consolidatedVolumeID,sizeof(uint64_t)*nVals);
 		double *consolidatedEdepInVolume; cudaMalloc(&consolidatedEdepInVolume,trackSize);
 		
 		//Todo: Create the output vectors for after thrust has summed my raw data into a consolidated list of volumeID:edep, rather than redifining each time
@@ -454,9 +476,15 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 		for (int j = 0; j < nSamples; j++)
 		{
-			//Allocate histogram memory
+			//Allocate CUB sort and histogram memory
 			void* histogramTempStorage = NULL;
-			size_t tempStorageSize = 0;
+			size_t histogramTempStorageSize = 0;
+
+			void* sortByKeyTempStorage = NULL;
+			size_t sortByKeyTempStorageSize = 0;
+
+			void* reduceByKeyTempStorage = NULL;
+			size_t reduceByKeyTempStorageSize = 0;
 
 			//New track. Zero values
 			cudaMemset(NumInBox,0,sizeof(int));
@@ -474,22 +502,34 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			//std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
 
 			//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
-			thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume); 
-			thrust::pair<long*,double*> endOfReducedList;
-			endOfReducedList = thrust::reduce_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions 
+			//thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume); 
+
+			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,volumeID,sortedVolumeID,edepInVolume,sortedEdepInVolume,*NumInSpheres);
+
+			cudaMalloc(&sortByKeyTempStorage,sortByKeyTempStorageSize); 
+
+			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,volumeID,sortedVolumeID,edepInVolume,sortedEdepInVolume,*NumInSpheres);
+			cudaDeviceSynchronize();
+			//thrust::pair<uint64_t*,double*> endOfReducedList;
+			//endOfReducedList = thrust::reduce_by_key(thrust::device,sortedVolumeID,sortedVolumeID+*NumInSpheres,sortedEdepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions 
+			
+			
 			
 			//First call to the histogram allocates the temp storage and size
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
 
 			//Allocate the temporary storage
-			cudaMalloc(&histogramTempStorage,tempStorageSize); 
+			cudaMalloc(&histogramTempStorage,histogramTempStorageSize); 
 
 			//Second call populates the histogram
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
 
 			//Accumulate the histogram values
 			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
-			
+
+			cudaFree(sortByKeyTempStorage);
+			cudaFree(histogramTempStorage);
+			cudaDeviceSynchronize();
 			//
 		}
 
