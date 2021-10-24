@@ -121,6 +121,45 @@ void GenerateLogHistogram(double **logBins, int **histogramVals, int **histogram
 	cudaMemset(*histogramVals,0,nbins*sizeof(int));
 	cudaMemset(*histogramValsAccumulated,0,nbins*sizeof(int));
 }
+/*__global__ void filter_shared_k(int *dst, int *nres, const int* src, int n) 
+{
+  __shared__ int l_n;
+  int i = blockIdx.x * (NPER_THREAD * BS) + threadIdx.x;
+
+  for (int iter = 0; iter < NPER_THREAD; iter++) 
+  {
+    // zero the counter
+    if (threadIdx.x == 0)
+      l_n = 0;
+    __syncthreads();
+
+    // get the value, evaluate the predicate, and
+    // increment the counter if needed
+    int d, pos;
+
+    if(i < n) 
+    {
+      d = src[i];
+      if(d > 0)
+        pos = atomicAdd(&l_n, 1);
+    }
+    __syncthreads();
+
+    // leader increments the global counter
+    if(threadIdx.x == 0)
+      l_n = atomicAdd(nres, l_n);
+    __syncthreads();
+
+    // threads with true predicates write their elements
+    if(i < n && d > 0) {
+      pos += l_n; // increment local pos by global counter
+      dst[pos] = d;
+    }
+    __syncthreads();
+
+    i += BS;
+  }
+}*/
 
 __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, float* randomVals, Track *inputTrack, Track *outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
 {
@@ -130,16 +169,21 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 	//3.) Performs stream compaction on those events which are in the box
 	//We are using stream compaction to avoid a monolithic kernel with large blocks within if-statements which reduces warp efficiency
 
+	//Put definitions outside of for-loop to prevent repeat constructor calls
+	double x_shifted; double y_shifted; int outputIndex;
+
 	//Determine index and stride
  	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
-	//printf("index %d, stride %d \n",index,stride);
+
+	//Counters for shared memory atomics
+	int localPosition;
+	__shared__ int localIndexCounter;
 	
 	//Convert random shifts in to appropriate range
 	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*greatestSphereOffset*2)-greatestSphereOffset);
 	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*greatestSphereOffset*2)-greatestSphereOffset);
-	//Put definitions outside of for-loop to prevent repeat constructor calls
-	double x_shifted; double y_shifted; int outputIndex;
+
 	//The value we compare to, to check if it's in the box
 	double box_edge = abs(greatestSphereOffset)+(sphereRadius);
 
@@ -150,11 +194,35 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 		x_shifted = inputTrack[i].x + x_shift;
 		y_shifted = inputTrack[i].y + y_shift;
 
-		//Check if in box
+		//Set local position to negative value, only takes on positive value if predicate is true
+		localPosition = -1;
+
+		//Zero the local counter
+		if (threadIdx.x == 0) 
+		{
+			localIndexCounter = 0;
+		}
+		__syncthreads();
+
+		//Check if in box, if true assign the local index position
 		if (abs(x_shifted) < box_edge  && abs(y_shifted) < box_edge)
 		{
+			localPosition = atomicAdd(&localIndexCounter,1);
+		}
+		__syncthreads();
+
+		//Add the local counter to the global counter
+		if (threadIdx.x == 0)
+		{
+			localIndexCounter = atomicAdd(numElementsCompacted,localIndexCounter);
+		}
+		__syncthreads();
+
+		//If predicate is true, then write the track to position localCounter+localPosition (localCounter now stores the globalCounter value because of the atomic add)
+		if(localPosition != -1)
+		{
 			//Atomically add to the global counter for the output array length
-			outputIndex = atomicAdd(numElementsCompacted,1);
+			outputIndex = localPosition+localIndexCounter;
 			//printf("current loop i: %d",i);
 			//Copy the track inside the box over to the new array
 			outputTrack[outputIndex].x = x_shifted;
@@ -162,6 +230,7 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 			outputTrack[outputIndex].z = inputTrack[i].z;
 			outputTrack[outputIndex].edep = inputTrack[i].edep;
 		}
+		__syncthreads();
 	}
 }
 
@@ -171,20 +240,25 @@ __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRa
 	//move all of the variable definitions out of the for loop
 	double distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
 
-	//Pre-calculate values
-	double sphereDiameter = sphereRadius*2;
-	double sphereRadiusMag = sphereRadius*sphereRadius; 
-
 	//Determine index and stride
  	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
 
+	//Counters for shared memory atomics
+	int localPosition;
+	__shared__ int localIndexCounter;
+
+	//Pre-calculate values
+	double sphereDiameter = sphereRadius*2;
+	double sphereRadiusMag = sphereRadius*sphereRadius; 
+
 	//Loop over all the energy deposition points
 	for (long i = index; i < *numElements; i+=stride)
 	{		
-		//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
-		//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
-		//Another aside: calculating in cubes would reduce complexity as well
+		//Find distance to the nearest sphere.
+		//We work in an arbitrary coordinate system here, rather than the "global" coordinate system
+		//Which is relative to the greats sphere offset
+		//In the scoring kernel we work in the global coordinate
 		distFromNearestSphereX = llrint((inputTrack[i].x)/sphereDiameter)*sphereDiameter-(inputTrack[i].x);
 		distFromNearestSphereY = llrint((inputTrack[i].y)/sphereDiameter)*sphereDiameter-(inputTrack[i].y); 
 		distFromNearestSphereZ = llrint((inputTrack[i].z)/sphereDiameter)*sphereDiameter-(inputTrack[i].z); 
@@ -192,11 +266,39 @@ __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRa
 		//Determine if inside the nearest sphere
 		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
 
+		//Set local position to negative value, only takes on positive value if predicate is true
+		localPosition = -1;
+
+		//Zero the local counter
+		if (threadIdx.x == 0) 
+		{
+			localIndexCounter = 0;
+		}
+		__syncthreads();
+
+		//Check if in sphere, then assign local index position
 		if (dist <= sphereRadiusMag)
 		{
-			//Atomically add to the global counter for the output array length
-			trackIdInSphere[atomicAdd(numElementsCompacted,1)] = i;
+			localPosition = atomicAdd(&localIndexCounter,1);
+			
 		}
+		__syncthreads();
+
+		//Add the local counter to the global counter
+		if (threadIdx.x == 0)
+		{
+			localIndexCounter = atomicAdd(numElementsCompacted,localIndexCounter);
+		}
+		__syncthreads();
+
+		//If predicate is true, then write the track to position localCounter+localPosition (localCounter now stores the globalCounter value because of the atomic add)
+		if (localPosition != -1)
+		{
+			//Atomically add to the global counter for the output array length
+			trackIdInSphere[localPosition+localIndexCounter] = i;
+		}
+		__syncthreads();
+
 	}
 }
 
@@ -402,17 +504,18 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			//indexTestingKernel<<<32,32>>>();
 
 			FilterInScoringBox<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomVals,deviceTrack,inBoxTrack,nVals,NumInBox,j);	
-			FilterTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,NumInSpheres,inSphereTrackId);
-			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInSpheres,inSphereTrackId,volumeID,edepInVolume);
+			FilterTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,NumInSpheres,inSphereTrackId); 
+			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInSpheres,inSphereTrackId,volumeID,edepInVolume); 
 			
 			//I think, because the sort_by_key operation takes *NumInSpheres as an argument
 			//If the kernel call is given, before NumInSpheres has finished updating, then it gets an incorrect value
 			cudaDeviceSynchronize();
+			//std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
 
 			//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
-			thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume);
+			thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume); 
 			thrust::pair<long*,double*> endOfReducedList;
-			endOfReducedList = thrust::reduce_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions
+			endOfReducedList = thrust::reduce_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions 
 			
 			//First call to the histogram allocates the temp storage and size
 			cub::DeviceHistogram::HistogramRange(histogramTempStorage,tempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
@@ -426,7 +529,7 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			//Accumulate the histogram values
 			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
 			
-			//std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
+			//
 		}
 
 		int number_of_values_in_histogram = 0;
@@ -439,8 +542,8 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		}
 
 		std::cout << number_of_values_in_histogram << std::endl;
-		//TODO: close my file at some point
-
+		//TODO: close my file at some point */
+		//cudaDeviceSynchronize();
 	  	//Initialize the histogram
 		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
 		return lineal_histogram;
