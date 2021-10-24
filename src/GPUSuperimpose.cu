@@ -289,24 +289,19 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 		}
 	}
 }*/
-
-__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, long *volumeID, double *edepOutput, int *numElementsCompacted)
+__global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere)
 {
 
+	//move all of the variable definitions out of the for loop
+	double distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
+
+	//Pre-calculate values
 	double sphereDiameter = sphereRadius*2;
-	double linealDenominator = (2./3.)*sphereDiameter; 
+	double sphereRadiusMag = sphereRadius*sphereRadius; 
 
 	//Determine index and stride
  	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
-
-	//move all of the variable definitions out of the for loop
-	long xIndex, yIndex, zIndex, sphereHitIndex;
-	double nearestSphereX, nearestSphereY, nearestSphereZ, distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
-	double xRelativeToEdge, yRelativeToEdge, zRelativeToEdge;
-	int outputIndex;
-
-	//long IndexShift = llround(greatestSphereOffset/sphereDiameter);
 
 	//Loop over all the energy deposition points
 	for (long i = index; i < *numElements; i+=stride)
@@ -314,30 +309,47 @@ __global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRad
 		//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
 		//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
 		//Another aside: calculating in cubes would reduce complexity as well
-		distFromNearestSphereX = llround((inputTrack[i].x)/sphereDiameter)*sphereDiameter-(inputTrack[i].x);
-		distFromNearestSphereY = llround((inputTrack[i].y)/sphereDiameter)*sphereDiameter-(inputTrack[i].y); 
-		distFromNearestSphereZ = llround((inputTrack[i].z)/sphereDiameter)*sphereDiameter-(inputTrack[i].z); 
+		distFromNearestSphereX = llrint((inputTrack[i].x)/sphereDiameter)*sphereDiameter-(inputTrack[i].x);
+		distFromNearestSphereY = llrint((inputTrack[i].y)/sphereDiameter)*sphereDiameter-(inputTrack[i].y); 
+		distFromNearestSphereZ = llrint((inputTrack[i].z)/sphereDiameter)*sphereDiameter-(inputTrack[i].z); 
 
 		//Determine if inside the nearest sphere
-		dist = sqrt(pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2));
+		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
 
-		if (dist <= sphereRadius)
+		if (dist <= sphereRadiusMag)
 		{
-			xIndex = llround((inputTrack[i].x-greatestSphereOffset)/sphereDiameter);
-			yIndex = llround((inputTrack[i].y-greatestSphereOffset)/sphereDiameter);
-			zIndex = llround((inputTrack[i].z-greatestSphereOffset)/sphereDiameter);
-
-			//Determine the Index of the sphere hit
-			sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
-			
 			//Atomically add to the global counter for the output array length
-			outputIndex = atomicAdd(numElementsCompacted,1);
-
-			//Write to volumeID and edepOutput
-			volumeID[outputIndex] = sphereHitIndex;
-			edepOutput[outputIndex] = inputTrack[i].edep/linealDenominator; //this should be ev/nm which is same a kev/um
-			//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
+			trackIdInSphere[atomicAdd(numElementsCompacted,1)] = i;
 		}
+	}
+}
+
+__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, int *trackIdInSphere, long *volumeID, double *edepOutput)
+{
+	//move all of the variable definitions out of the for loop
+	long xIndex, yIndex, zIndex, sphereHitIndex;
+
+	//Pre-calculate some values
+	double sphereDiameter = sphereRadius*2;
+	double linealDenominator = (2./3.)*sphereDiameter; 
+
+	//Determine index and stride
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	//Loop over all the energy deposition points
+	for (long i = index; i < *numElements; i+=stride)
+	{		
+		xIndex = llrint((inputTrack[trackIdInSphere[i]].x-greatestSphereOffset)/sphereDiameter);
+		yIndex = llrint((inputTrack[trackIdInSphere[i]].y-greatestSphereOffset)/sphereDiameter);
+		zIndex = llrint((inputTrack[trackIdInSphere[i]].z-greatestSphereOffset)/sphereDiameter);
+
+		//Determine the Index of the sphere hit
+		sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
+
+		//Write to volumeID and edepOutput
+		volumeID[i] = sphereHitIndex;
+		edepOutput[i] = inputTrack[trackIdInSphere[i]].edep/linealDenominator; //this should be ev/nm which is same a kev/um
 	}
 }
 
@@ -510,7 +522,8 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			//indexTestingKernel<<<32,32>>>();
 
 			FilterInScoringBox<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomVals,deviceTrack,inBoxTrack,nVals,NumInBox,j);	
-			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,volumeID,edepInVolume,NumInSpheres);
+			FilterTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,NumInSpheres,inSphereTrackId);
+			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInSpheres,inSphereTrackId,volumeID,edepInVolume);
 			
 			//I think, because the sort_by_key operation takes *NumInSpheres as an argument
 			//If the kernel call is given, before NumInSpheres has finished updating, then it gets an incorrect value
