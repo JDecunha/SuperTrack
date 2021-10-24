@@ -364,6 +364,13 @@ __global__ void readDeviceTrack(Track *deviceTrack)
 		printf("%f \n",deviceTrack[i].x);
 	}
 }
+__global__ void readDeviceEdepList(double *edeps)
+{
+	for(int i = 0;i<200;i++)
+	{
+		printf("%f \n",edeps[i]);
+	}
+}
 
 __global__ void indexTestingKernel()
 {
@@ -371,6 +378,13 @@ __global__ void indexTestingKernel()
 	int stride = blockDim.x * gridDim.x;
 	printf("index %d, stride %d \n",index,stride);
 }
+
+/*__global__ void extractCudaInformation()
+{
+	printf("Cuda_ARCH: %s",__CUDA_ARCH__);
+	printf("CUDA_ACC: %s",__CUDACC__);
+	printf("CUDA_RDC: %s",__CUDACC_RDC__);
+}*/
 
 TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 20000, Long_t random_seed = time(NULL))
 {
@@ -471,8 +485,12 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		
 		//Todo: Create the output vectors for after thrust has summed my raw data into a consolidated list of volumeID:edep, rather than redifining each time
 
-		int *NumInBox; int *NumInSpheres;
-		cudaMallocManaged(&NumInBox,sizeof(int)); cudaMallocManaged(&NumInSpheres,sizeof(int));
+		int *NumInBox; int *NumInSpheres; int *NumberOfEdepsReduced;
+		cudaMallocManaged(&NumInBox,sizeof(int)); cudaMallocManaged(&NumInSpheres,sizeof(int)); cudaMallocManaged(&NumberOfEdepsReduced,sizeof(int));
+
+		//std::cout << "CUB Runtime Function defined as:" << CUB_RUNTIME_FUNCTION << std::endl;
+
+		CUBAddOperator reductionOperator;
 
 		for (int j = 0; j < nSamples; j++)
 		{
@@ -495,39 +513,46 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			FilterInScoringBox<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomVals,deviceTrack,inBoxTrack,nVals,NumInBox,j);	
 			FilterTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInBox,NumInSpheres,inSphereTrackId); 
 			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,inBoxTrack,NumInSpheres,inSphereTrackId,volumeID,edepInVolume); 
+
+			cudaDeviceSynchronize();
 			
 			//I think, because the sort_by_key operation takes *NumInSpheres as an argument
 			//If the kernel call is given, before NumInSpheres has finished updating, then it gets an incorrect value
-			cudaDeviceSynchronize();
+
 			//std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
 
 			//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
 			//thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume); 
 
 			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,volumeID,sortedVolumeID,edepInVolume,sortedEdepInVolume,*NumInSpheres);
-
 			cudaMalloc(&sortByKeyTempStorage,sortByKeyTempStorageSize); 
-
 			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,volumeID,sortedVolumeID,edepInVolume,sortedEdepInVolume,*NumInSpheres);
-			cudaDeviceSynchronize();
+
 			//thrust::pair<uint64_t*,double*> endOfReducedList;
 			//endOfReducedList = thrust::reduce_by_key(thrust::device,sortedVolumeID,sortedVolumeID+*NumInSpheres,sortedEdepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions 
 			
-			
-			
+			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedVolumeID, consolidatedVolumeID, sortedEdepInVolume, consolidatedEdepInVolume, NumberOfEdepsReduced, reductionOperator, *NumInSpheres);
+			cudaMalloc(&reduceByKeyTempStorage,reduceByKeyTempStorageSize); 
+			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedVolumeID, consolidatedVolumeID, sortedEdepInVolume, consolidatedEdepInVolume, NumberOfEdepsReduced, reductionOperator, *NumInSpheres);
+
+			//Check the behavior of varying this device synchronize! because if the next function is called, before NumberOfEdepsReduced is assigned, it could mess up the histogram right
+			//cudaDeviceSynchronize();
+
+			//std::cout << *NumberOfEdepsReduced << std::endl;
 			//First call to the histogram allocates the temp storage and size
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,*NumberOfEdepsReduced);
 
 			//Allocate the temporary storage
 			cudaMalloc(&histogramTempStorage,histogramTempStorageSize); 
 
 			//Second call populates the histogram
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,endOfReducedList.second-consolidatedEdepInVolume);
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,consolidatedEdepInVolume,histogramVals,nbins+1,logBins,*NumberOfEdepsReduced);
 
 			//Accumulate the histogram values
 			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
 
 			cudaFree(sortByKeyTempStorage);
+			cudaFree(reduceByKeyTempStorage);
 			cudaFree(histogramTempStorage);
 			cudaDeviceSynchronize();
 			//

@@ -24,6 +24,7 @@ add_executable(SuperTrack SuperTrack.cu)
 	add_library(src STATIC ${sources})
 	#public below means the main SuperTrack.cu inherits the include directories of src
 	target_include_directories(src PUBLIC ${PROJECT_SOURCE_DIR}/include)
+	set_target_properties(src PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 #Now link my libraries
 	target_link_libraries(SuperTrack PRIVATE src cuda_test ${ROOT_LIBRARIES} -lcurand)
