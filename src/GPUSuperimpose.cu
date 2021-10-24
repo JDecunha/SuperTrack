@@ -256,9 +256,9 @@ __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRa
 	for (long i = index; i < *numElements; i+=stride)
 	{		
 		//Find distance to the nearest sphere.
-		//We work in an arbitrary coordinate system here, rather than the "global" coordinate system
-		//Which is relative to the greats sphere offset
-		//In the scoring kernel we work in the global coordinate
+		//For performance reasons, we work in an arbitrary coordinate system here, rather than the "global" coordinate system
+		//The "global" coordinate systrem is relative to the greatest sphere offset
+		//In the later scoring kernel we work in the global coordinate system, and that's why we subtract the greatest sphere offset there
 		distFromNearestSphereX = llrint((inputTrack[i].x)/sphereDiameter)*sphereDiameter-(inputTrack[i].x);
 		distFromNearestSphereY = llrint((inputTrack[i].y)/sphereDiameter)*sphereDiameter-(inputTrack[i].y); 
 		distFromNearestSphereZ = llrint((inputTrack[i].z)/sphereDiameter)*sphereDiameter-(inputTrack[i].z); 
