@@ -50,72 +50,7 @@ struct SphericalGeometry
 };
 typedef struct SphericalGeometry SphericalGeometry;
 
-//TODO: Change this to work with a C-style struct later, so x,y,z,edep are all one entry
-__global__ void SuperimposeTrack(double greatestSphereOffset, double sphereDiameter, long numSpheresLinear, float* randomVals, double* x, double* y, double* z, double* edep,long *volumeID, double *edepOutput, long numElements,int oversampleIterationNumber)
-{
-	//Our entire geometry should be able to be described by only the greatest offset, the sphere diameter and number of spheres in a line. That's useful
-	double sphereRadius = sphereDiameter/2;
-	double linealDenominator = (2./3.)*sphereDiameter; //calculate this here as an efficiency gain
 
-	//Determine index and stride
- 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-	int stride = blockDim.x * gridDim.x;
-
-	//Convert random shifts  in to appropriate range
-	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*greatestSphereOffset*2)-greatestSphereOffset);
-	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*greatestSphereOffset*2)-greatestSphereOffset);
-	//printf("x_shift: %f \n",randomVals[(oversampleIterationNumber*2)]);
-	//printf("y_shift: %f \n",randomVals[(oversampleIterationNumber*2+1)]);
-	//printf("Greatest sphere offset: %f \n", greatestSphereOffset);
-
-	//Loop over all the energy deposition points
-	for (long i = index; i < numElements; i+=stride)
-	{
-		//Write a zero to edepOutput and volumeID. Doing this here avoids warp divergence later.
-		edepOutput[i] = 0; volumeID[i] = 0;
-
-		//Apply random shift. My numbers that come in are floats from 0.0 to 1.0. Have to shift them to the desired range
-		double x_shifted = x[i] + x_shift;
-		double y_shifted = y[i] + y_shift;
-
-		//Check if inside box
-		if (abs(x_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(y_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(z[i]) < abs(greatestSphereOffset)+(sphereRadius))
-		{
-			//Convert position to index in the grid of spheres
-			//printf("x_shifted: %f \n",x_shifted);
-			long xIndex = llround((x_shifted-greatestSphereOffset)/sphereDiameter);
-			long yIndex = llround((y_shifted-greatestSphereOffset)/sphereDiameter);
-			long zIndex = llround((z[i]-greatestSphereOffset)/sphereDiameter);
-			
-			//Determine the location of the nearest sphere in the grid (with 0,0,0 being the top left sphere, different coordinate system than the ptcls are in)
-			double nearestSphereX = xIndex*sphereDiameter;
-			double nearestSphereY = yIndex*sphereDiameter;
-			double nearestSphereZ = zIndex*sphereDiameter;
-
-			//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
-			//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
-			//Another aside: calculating in cubes would reduce complexity as well
-			double distFromNearestSphereX = nearestSphereX-(x_shifted-greatestSphereOffset);
-			double distFromNearestSphereY = nearestSphereY-(y_shifted-greatestSphereOffset); 
-			double distFromNearestSphereZ = nearestSphereZ-(z[i]-greatestSphereOffset); 
-
-			//Determine if inside the nearest sphere
-			double dist = pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2);
-			dist = sqrt(dist);
-
-			if (dist <= sphereRadius)
-			{
-				//Determine the Index of the sphere hit
-				long sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
-
-				//Write to volumeID and edepOutput
-				volumeID[i] = sphereHitIndex;
-				edepOutput[i] = edep[i]/linealDenominator; //this should be ev/nm which is same a kev/um
-				//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
-			}
-		}
-	}
-}
 
 void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track **hostTrack, Track **deviceTrack)
 {
@@ -229,66 +164,7 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 		}
 	}
 }
-/*__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, long *volumeID, double *edepOutput, int *numElementsCompacted)
-{
 
-	double sphereDiameter = sphereRadius*2;
-	double linealDenominator = (2./3.)*sphereDiameter; 
-
-	//Determine index and stride
- 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-	int stride = blockDim.x * gridDim.x;
-
-	//move all of the variable definitions out of the for loop
-	long xIndex, yIndex, zIndex, sphereHitIndex;
-	double nearestSphereX, nearestSphereY, nearestSphereZ, distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
-	double xRelativeToEdge, yRelativeToEdge, zRelativeToEdge;
-	int outputIndex;
-
-	//Loop over all the energy deposition points
-	for (long i = index; i < *numElements; i+=stride)
-	{
-		xRelativeToEdge = inputTrack[i].x-greatestSphereOffset;
-		yRelativeToEdge = inputTrack[i].y-greatestSphereOffset;
-		zRelativeToEdge = inputTrack[i].z-greatestSphereOffset;
-
-		//Convert position to index in the grid of spheres
-		//printf("x_shifted: %f \n",x_shifted);
-		xIndex = llround((xRelativeToEdge)/sphereDiameter);
-		yIndex = llround((yRelativeToEdge)/sphereDiameter);
-		zIndex = llround((zRelativeToEdge)/sphereDiameter);
-		
-		//Determine the location of the nearest sphere in the grid (with 0,0,0 being the top left sphere, different coordinate system than the ptcls are in)
-		nearestSphereX = xIndex*sphereDiameter;
-		nearestSphereY = yIndex*sphereDiameter;
-		nearestSphereZ = zIndex*sphereDiameter;
-
-		//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
-		//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
-		//Another aside: calculating in cubes would reduce complexity as well
-		distFromNearestSphereX = nearestSphereX-(xRelativeToEdge);
-		distFromNearestSphereY = nearestSphereY-(yRelativeToEdge); 
-		distFromNearestSphereZ = nearestSphereZ-(zRelativeToEdge); 
-
-		//Determine if inside the nearest sphere
-		dist = pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2);
-		dist = sqrt(dist);
-
-		if (dist <= sphereRadius)
-		{
-			//Determine the Index of the sphere hit
-			sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
-			
-			//Atomically add to the global counter for the output array length
-			outputIndex = atomicAdd(numElementsCompacted,1);
-
-			//Write to volumeID and edepOutput
-			volumeID[outputIndex] = sphereHitIndex;
-			edepOutput[outputIndex] = inputTrack[i].edep/linealDenominator; //this should be ev/nm which is same a kev/um
-			//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
-		}
-	}
-}*/
 __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere)
 {
 
@@ -473,16 +349,18 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	{
 		//Calculate size information for memory allocations
 		int nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
-		size_t trackSize = nVals * sizeof(double); size_t trackStructSize = nVals *sizeof(Track);
+		size_t trackSize = nVals * sizeof(double); 
+		size_t trackStructSize = nVals *sizeof(Track);
 
 		//Define local and GPU track pointers
 		Track *hostTrack; Track *deviceTrack; 
 		LoadTrack(input, &hostTrack, &deviceTrack); //load track from disk and copy to GPU
-		//readDeviceTrack<<<1,1>>>(deviceTrack);
 
 		//Allocate memory for the tracks found to be within the box
-		Track *inBoxTrack;
+		Track *inBoxTrack; //In box tracks stores the tracks, with a random shift added, of thos found to be within the box
 		cudaMalloc(&inBoxTrack,trackStructSize); 
+
+		//Allocate memory to store the TrackIDs of the points within spheres
 		int *inSphereTrackId;
 		cudaMalloc(&inSphereTrackId,nVals*sizeof(int));
 		
@@ -491,7 +369,9 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		GenerateRandomXYShift(input, &randomVals, nSamples, random_seed); //Allocate and fill with random numbers
 
 		//Define histograms
-		double *logBins; int* histogramVals; int* histogramValsAccumulated; 
+		double *logBins; 
+		int* histogramVals; 
+		int* histogramValsAccumulated; 
 		int nbins = 200; float binLowerMagnitude = -1; float binUpperMagnitude = 2; //Set histogram parameters
 		GenerateLogHistogram(&logBins, &histogramVals, &histogramValsAccumulated, nbins, binLowerMagnitude, binUpperMagnitude);
 		
@@ -499,7 +379,7 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		long *volumeID; cudaMalloc(&volumeID,sizeof(long)*nVals);
 		double *edepInVolume; cudaMalloc(&edepInVolume,trackSize);
 
-		//Allocate memory for the thrust sorted and reduced list
+		//Allocate memory for the volume:edep paired list after Thrust compacts it
 		//TODO: change back to regular memory after debugging
 		long *consolidatedVolumeID; cudaMalloc(&consolidatedVolumeID,sizeof(long)*nVals);
 		double *consolidatedEdepInVolume; cudaMalloc(&consolidatedEdepInVolume,trackSize);
@@ -579,3 +459,130 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 }
 
+//TODO: Change this to work with a C-style struct later, so x,y,z,edep are all one entry
+/*__global__ void SuperimposeTrack(double greatestSphereOffset, double sphereDiameter, long numSpheresLinear, float* randomVals, double* x, double* y, double* z, double* edep,long *volumeID, double *edepOutput, long numElements,int oversampleIterationNumber)
+{
+	//Our entire geometry should be able to be described by only the greatest offset, the sphere diameter and number of spheres in a line. That's useful
+	double sphereRadius = sphereDiameter/2;
+	double linealDenominator = (2./3.)*sphereDiameter; //calculate this here as an efficiency gain
+
+	//Determine index and stride
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	//Convert random shifts  in to appropriate range
+	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*greatestSphereOffset*2)-greatestSphereOffset);
+	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*greatestSphereOffset*2)-greatestSphereOffset);
+	//printf("x_shift: %f \n",randomVals[(oversampleIterationNumber*2)]);
+	//printf("y_shift: %f \n",randomVals[(oversampleIterationNumber*2+1)]);
+	//printf("Greatest sphere offset: %f \n", greatestSphereOffset);
+
+	//Loop over all the energy deposition points
+	for (long i = index; i < numElements; i+=stride)
+	{
+		//Write a zero to edepOutput and volumeID. Doing this here avoids warp divergence later.
+		edepOutput[i] = 0; volumeID[i] = 0;
+
+		//Apply random shift. My numbers that come in are floats from 0.0 to 1.0. Have to shift them to the desired range
+		double x_shifted = x[i] + x_shift;
+		double y_shifted = y[i] + y_shift;
+
+		//Check if inside box
+		if (abs(x_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(y_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(z[i]) < abs(greatestSphereOffset)+(sphereRadius))
+		{
+			//Convert position to index in the grid of spheres
+			//printf("x_shifted: %f \n",x_shifted);
+			long xIndex = llround((x_shifted-greatestSphereOffset)/sphereDiameter);
+			long yIndex = llround((y_shifted-greatestSphereOffset)/sphereDiameter);
+			long zIndex = llround((z[i]-greatestSphereOffset)/sphereDiameter);
+			
+			//Determine the location of the nearest sphere in the grid (with 0,0,0 being the top left sphere, different coordinate system than the ptcls are in)
+			double nearestSphereX = xIndex*sphereDiameter;
+			double nearestSphereY = yIndex*sphereDiameter;
+			double nearestSphereZ = zIndex*sphereDiameter;
+
+			//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
+			//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
+			//Another aside: calculating in cubes would reduce complexity as well
+			double distFromNearestSphereX = nearestSphereX-(x_shifted-greatestSphereOffset);
+			double distFromNearestSphereY = nearestSphereY-(y_shifted-greatestSphereOffset); 
+			double distFromNearestSphereZ = nearestSphereZ-(z[i]-greatestSphereOffset); 
+
+			//Determine if inside the nearest sphere
+			double dist = pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2);
+			dist = sqrt(dist);
+
+			if (dist <= sphereRadius)
+			{
+				//Determine the Index of the sphere hit
+				long sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
+
+				//Write to volumeID and edepOutput
+				volumeID[i] = sphereHitIndex;
+				edepOutput[i] = edep[i]/linealDenominator; //this should be ev/nm which is same a kev/um
+				//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
+			}
+		}
+	}
+}*/
+
+/*__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, long *volumeID, double *edepOutput, int *numElementsCompacted)
+{
+
+	double sphereDiameter = sphereRadius*2;
+	double linealDenominator = (2./3.)*sphereDiameter; 
+
+	//Determine index and stride
+ 	int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	//move all of the variable definitions out of the for loop
+	long xIndex, yIndex, zIndex, sphereHitIndex;
+	double nearestSphereX, nearestSphereY, nearestSphereZ, distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
+	double xRelativeToEdge, yRelativeToEdge, zRelativeToEdge;
+	int outputIndex;
+
+	//Loop over all the energy deposition points
+	for (long i = index; i < *numElements; i+=stride)
+	{
+		xRelativeToEdge = inputTrack[i].x-greatestSphereOffset;
+		yRelativeToEdge = inputTrack[i].y-greatestSphereOffset;
+		zRelativeToEdge = inputTrack[i].z-greatestSphereOffset;
+
+		//Convert position to index in the grid of spheres
+		//printf("x_shifted: %f \n",x_shifted);
+		xIndex = llround((xRelativeToEdge)/sphereDiameter);
+		yIndex = llround((yRelativeToEdge)/sphereDiameter);
+		zIndex = llround((zRelativeToEdge)/sphereDiameter);
+		
+		//Determine the location of the nearest sphere in the grid (with 0,0,0 being the top left sphere, different coordinate system than the ptcls are in)
+		nearestSphereX = xIndex*sphereDiameter;
+		nearestSphereY = yIndex*sphereDiameter;
+		nearestSphereZ = zIndex*sphereDiameter;
+
+		//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
+		//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
+		//Another aside: calculating in cubes would reduce complexity as well
+		distFromNearestSphereX = nearestSphereX-(xRelativeToEdge);
+		distFromNearestSphereY = nearestSphereY-(yRelativeToEdge); 
+		distFromNearestSphereZ = nearestSphereZ-(zRelativeToEdge); 
+
+		//Determine if inside the nearest sphere
+		dist = pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2);
+		dist = sqrt(dist);
+
+		if (dist <= sphereRadius)
+		{
+			//Determine the Index of the sphere hit
+			sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
+			
+			//Atomically add to the global counter for the output array length
+			outputIndex = atomicAdd(numElementsCompacted,1);
+
+			//Write to volumeID and edepOutput
+			volumeID[outputIndex] = sphereHitIndex;
+			edepOutput[outputIndex] = inputTrack[i].edep/linealDenominator; //this should be ev/nm which is same a kev/um
+			//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
+		}
+	}
+}*/
