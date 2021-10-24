@@ -121,45 +121,6 @@ void GenerateLogHistogram(double **logBins, int **histogramVals, int **histogram
 	cudaMemset(*histogramVals,0,nbins*sizeof(int));
 	cudaMemset(*histogramValsAccumulated,0,nbins*sizeof(int));
 }
-/*__global__ void filter_shared_k(int *dst, int *nres, const int* src, int n) 
-{
-  __shared__ int l_n;
-  int i = blockIdx.x * (NPER_THREAD * BS) + threadIdx.x;
-
-  for (int iter = 0; iter < NPER_THREAD; iter++) 
-  {
-    // zero the counter
-    if (threadIdx.x == 0)
-      l_n = 0;
-    __syncthreads();
-
-    // get the value, evaluate the predicate, and
-    // increment the counter if needed
-    int d, pos;
-
-    if(i < n) 
-    {
-      d = src[i];
-      if(d > 0)
-        pos = atomicAdd(&l_n, 1);
-    }
-    __syncthreads();
-
-    // leader increments the global counter
-    if(threadIdx.x == 0)
-      l_n = atomicAdd(nres, l_n);
-    __syncthreads();
-
-    // threads with true predicates write their elements
-    if(i < n && d > 0) {
-      pos += l_n; // increment local pos by global counter
-      dst[pos] = d;
-    }
-    __syncthreads();
-
-    i += BS;
-  }
-}*/
 
 __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, float* randomVals, Track *inputTrack, Track *outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
 {
