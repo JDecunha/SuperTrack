@@ -103,7 +103,7 @@ void GenerateLogHistogram(double **logBins, int **histogramVals, int **histogram
 	cudaMemset(*histogramValsAccumulated,0,nbins*sizeof(int));
 }
 
-__global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, float* randomVals, Track *inputTrack, Track *outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
+__global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals, Track *inputTrack, Track *outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
 {
 	//This function
 	//1.) Applies the random shift to the x,y coordinates
@@ -123,11 +123,11 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 	__shared__ int localIndexCounter;
 	
 	//Convert random shifts in to appropriate range
-	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*greatestSphereOffset*2)-greatestSphereOffset);
-	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*greatestSphereOffset*2)-greatestSphereOffset);
+	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*geometry.greatestSphereOffset*2)-geometry.greatestSphereOffset);
+	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*geometry.greatestSphereOffset*2)-geometry.greatestSphereOffset);
 
 	//The value we compare to, to check if it's in the box
-	double box_edge = abs(greatestSphereOffset)+(sphereRadius);
+	double box_edge = abs(geometry.greatestSphereOffset)+(geometry.sphereRadius);
 
 	//Loop over all the energy deposition points
 	for (int i = index; i < numElements; i+=stride)
@@ -176,8 +176,10 @@ __global__ void FilterInScoringBox(double greatestSphereOffset, double sphereRad
 	}
 }
 
-__global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere)
+__global__ void FilterTrackInSphere(SphericalGeometry geometry, Track *inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere)
 {
+
+	//printf("%f %f \n",geometry.sphereDiameter,geometry.scoringRegionHalfLength);
 
 	//move all of the variable definitions out of the for loop
 	double distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
@@ -191,8 +193,8 @@ __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRa
 	__shared__ int localIndexCounter;
 
 	//Pre-calculate values
-	double sphereDiameter = sphereRadius*2;
-	double sphereRadiusMag = sphereRadius*sphereRadius; 
+	double sphereDiameter = geometry.sphereDiameter; 
+	double sphereRadiusMag = geometry.sphereRadius*geometry.sphereRadius; 
 
 	//Loop over all the energy deposition points
 	for (long i = index; i < *numElements; i+=stride)
@@ -201,9 +203,9 @@ __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRa
 		//For performance reasons, we work in an arbitrary coordinate system here, rather than the "global" coordinate system
 		//The "global" coordinate systrem is relative to the greatest sphere offset
 		//In the later scoring kernel we work in the global coordinate system, and that's why we subtract the greatest sphere offset there
-		distFromNearestSphereX = llrint((inputTrack[i].x)/sphereDiameter)*sphereDiameter-(inputTrack[i].x);
-		distFromNearestSphereY = llrint((inputTrack[i].y)/sphereDiameter)*sphereDiameter-(inputTrack[i].y); 
-		distFromNearestSphereZ = llrint((inputTrack[i].z)/sphereDiameter)*sphereDiameter-(inputTrack[i].z); 
+		distFromNearestSphereX = llrint((inputTrack[i].x)/sphereDiameter)*geometry.sphereDiameter-(inputTrack[i].x);
+		distFromNearestSphereY = llrint((inputTrack[i].y)/sphereDiameter)*geometry.sphereDiameter-(inputTrack[i].y); 
+		distFromNearestSphereZ = llrint((inputTrack[i].z)/sphereDiameter)*geometry.sphereDiameter-(inputTrack[i].z); 
 
 		//Determine if inside the nearest sphere
 		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
@@ -244,13 +246,13 @@ __global__ void FilterTrackInSphere(double greatestSphereOffset, double sphereRa
 	}
 }
 
-__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, int *trackIdInSphere, VolumeEdepPair outputPair)
+__global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track *inputTrack, int *numElements, int *trackIdInSphere, VolumeEdepPair outputPair)
 {
 	//move all of the variable definitions out of the for loop
 	long xIndex, yIndex, zIndex, sphereHitIndex;
 
 	//Pre-calculate some values
-	double sphereDiameter = sphereRadius*2;
+	double sphereDiameter = geometry.sphereDiameter;
 	double linealDenominator = (2./3.)*sphereDiameter; 
 
 	//Determine index and stride
@@ -260,12 +262,12 @@ __global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRad
 	//Loop over all the energy deposition points
 	for (uint64_t i = index; i < *numElements; i+=stride)
 	{		
-		xIndex = llrint((inputTrack[trackIdInSphere[i]].x-greatestSphereOffset)/sphereDiameter);
-		yIndex = llrint((inputTrack[trackIdInSphere[i]].y-greatestSphereOffset)/sphereDiameter);
-		zIndex = llrint((inputTrack[trackIdInSphere[i]].z-greatestSphereOffset)/sphereDiameter);
+		xIndex = llrint((inputTrack[trackIdInSphere[i]].x-geometry.greatestSphereOffset)/sphereDiameter);
+		yIndex = llrint((inputTrack[trackIdInSphere[i]].y-geometry.greatestSphereOffset)/sphereDiameter);
+		zIndex = llrint((inputTrack[trackIdInSphere[i]].z-geometry.greatestSphereOffset)/sphereDiameter);
 
 		//Determine the Index of the sphere hit
-		sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
+		sphereHitIndex = xIndex + yIndex*(geometry.numSpheresLinear) + zIndex*pow(geometry.numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
 
 		//Write to volumeID and edepOutput
 		outputPair.volume[i] = sphereHitIndex;
@@ -370,6 +372,8 @@ VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
 	return toAllocate;
 }
 
+//Todo: create function for freeing GPUVolumeEdepPair
+
 __global__ void ReadVolumeEdepPair(VolumeEdepPair* pair)
 {
 	for (int i = 0; i < 10000; i++)
@@ -428,6 +432,8 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	double_t top_sphere_offset = -(((float(num_spheres_linear))/2)-0.5)*scoring_sphere_spacing;
 	float_t scoringSphereRadius = scoring_sphere_diameter/2;
 
+	SphericalGeometry sphericalGeometry = SphericalGeometry(scoring_square_half_length,scoring_sphere_diameter);
+
 	//We are done reading the Tree single threaded. Close it.
 	f.Close();
 
@@ -466,9 +472,8 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		VolumeEdepPair sortedEdeps = AllocateGPUVolumeEdepPair(nVals); 
 		VolumeEdepPair reducedEdeps = AllocateGPUVolumeEdepPair(nVals); 
 
-		int *NumInBox; int *NumInSpheres; int *NumberOfEdepsReduced;
-		cudaMallocManaged(&NumInBox,sizeof(int)); cudaMallocManaged(&NumInSpheres,sizeof(int)); cudaMallocManaged(&NumberOfEdepsReduced,sizeof(int));
-		//std::cout << "CUB Runtime Function defined as:" << CUB_RUNTIME_FUNCTION << std::endl;
+		int *NumInBox; 
+		cudaMallocManaged(&NumInBox,sizeof(int)); 
 
 		CUBAddOperator reductionOperator;
 
@@ -488,47 +493,30 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			cudaMemset(NumInBox,0,sizeof(int));
 			cudaMemset(edepsInTarget.numElements,0,sizeof(int));
 
-			//indexTestingKernel<<<32,32>>>();
-
-			FilterInScoringBox<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomVals,deviceTrack,randomlyShiftedTrack,nVals,NumInBox,j);	
-			FilterTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomlyShiftedTrack,NumInBox,edepsInTarget.numElements,inSphereTrackId); 
-			ScoreTrackInSphere<<<60,256>>>(top_sphere_offset,scoringSphereRadius,num_spheres_linear,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
-
-			//ReadVolumeEdepPair<<<1,1>>>(InitialEdeps);
+			FilterInScoringBox<<<60,256>>>(sphericalGeometry,randomVals,deviceTrack,randomlyShiftedTrack,nVals,NumInBox,j);	
+			FilterTrackInSphere<<<60,256>>>(sphericalGeometry,randomlyShiftedTrack,NumInBox,edepsInTarget.numElements,inSphereTrackId); 
+			ScoreTrackInSphere<<<60,256>>>(sphericalGeometry,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
 		
 			cudaDeviceSynchronize();
 
 			//I think, because the sort_by_key operation takes *NumInSpheres as an argument
 			//If the kernel call is given, before NumInSpheres has finished updating, then it gets an incorrect value
-
-			//std::cout << *NumInBox << " " << *NumInSpheres << std::endl;
-
-			//Use Thrust, to sort my energy depositions in the order of the volumes they occured in 
-			//thrust::sort_by_key(thrust::device,volumeID,volumeID+*NumInSpheres,edepInVolume); 
-
 			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
 			cudaMalloc(&sortByKeyTempStorage,sortByKeyTempStorageSize); 
 			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
-
-			//thrust::pair<uint64_t*,double*> endOfReducedList;
-			//endOfReducedList = thrust::reduce_by_key(thrust::device,sortedVolumeID,sortedVolumeID+*NumInSpheres,sortedEdepInVolume,consolidatedVolumeID,consolidatedEdepInVolume); //Then reduce the energy depositions. Default reduction function is plus(), which is exactly what I want. i.e. summing the depositions 
 			
-			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, NumberOfEdepsReduced, reductionOperator, *(edepsInTarget.numElements));
+			//Then reduce the energy depositions
+			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
 			cudaMalloc(&reduceByKeyTempStorage,reduceByKeyTempStorageSize); 
-			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, NumberOfEdepsReduced, reductionOperator, *(edepsInTarget.numElements));
+			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
 
 			//Check the behavior of varying this device synchronize! because if the next function is called, before NumberOfEdepsReduced is assigned, it could mess up the histogram right
 			//cudaDeviceSynchronize();
 
-			//std::cout << *NumberOfEdepsReduced << std::endl;
 			//First call to the histogram allocates the temp storage and size
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,reducedEdeps.edep,histogramVals,nbins+1,logBins,*NumberOfEdepsReduced);
-
-			//Allocate the temporary storage
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
 			cudaMalloc(&histogramTempStorage,histogramTempStorageSize); 
-
-			//Second call populates the histogram
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,reducedEdeps.edep,histogramVals,nbins+1,logBins,*NumberOfEdepsReduced);
+			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
 
 			//Accumulate the histogram values
 			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
@@ -537,7 +525,7 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			cudaFree(reduceByKeyTempStorage);
 			cudaFree(histogramTempStorage);
 			cudaDeviceSynchronize();
-			//
+			
 		}
 
 		int number_of_values_in_histogram = 0;
