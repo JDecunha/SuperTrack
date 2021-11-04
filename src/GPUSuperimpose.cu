@@ -374,6 +374,44 @@ VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
 
 //Todo: create function for freeing GPUVolumeEdepPair
 
+CubStorageBuffer AllocateCubSortBuffer(VolumeEdepPair edepPairList, uint64_t nVals)
+{
+	//Create the buffer with default constructor
+	CubStorageBuffer returnBuffer = CubStorageBuffer();
+
+	//Call the CUB function to determine memory constraints, then malloc
+	cub::DeviceRadixSort::SortPairs(returnBuffer.storage,returnBuffer.size,edepPairList.volume,edepPairList.volume,edepPairList.edep,edepPairList.edep,nVals);
+	cudaMalloc(&returnBuffer.storage,returnBuffer.size); 
+
+	return returnBuffer;
+}
+
+CubStorageBuffer AllocateCubReduceBuffer(VolumeEdepPair edepPairList, uint64_t nVals)
+{
+	//Create the buffer with default constructor
+	CubStorageBuffer returnBuffer = CubStorageBuffer();
+	//Generic Reduction Operator
+	CUBAddOperator reductionOperator;
+
+	//Call the CUB function to determine memory constraints, then malloc
+	cub::DeviceReduce::ReduceByKey(returnBuffer.storage,returnBuffer.size, edepPairList.volume, edepPairList.volume, edepPairList.edep, edepPairList.edep, edepPairList.numElements, reductionOperator, nVals);
+	cudaMalloc(&returnBuffer.storage,returnBuffer.size); 
+
+	return returnBuffer;
+}
+
+CubStorageBuffer AllocateCubHistogramBuffer(VolumeEdepPair edepPairList, uint64_t nVals, int* histogramVals, double* logBins, int nbins)
+{
+	//Create the buffer with default constructor
+	CubStorageBuffer returnBuffer = CubStorageBuffer();
+
+	//Call the CUB function to determine memory constraints, then malloc
+	cub::DeviceHistogram::HistogramRange(returnBuffer.storage,returnBuffer.size, edepPairList.edep,histogramVals,nbins+1,logBins,nVals);
+	cudaMalloc(&returnBuffer.storage,returnBuffer.size); 
+
+	return returnBuffer;
+}
+
 __global__ void ReadVolumeEdepPair(VolumeEdepPair* pair)
 {
 	for (int i = 0; i < 10000; i++)
@@ -477,17 +515,14 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 		CUBAddOperator reductionOperator;
 
+		//Allocate memory for the temporary storage the CUB operations needs
+		CubStorageBuffer sortBuffer = AllocateCubSortBuffer(edepsInTarget,nVals);
+		CubStorageBuffer reduceBuffer = AllocateCubReduceBuffer(edepsInTarget,nVals);
+		CubStorageBuffer histogramBuffer = AllocateCubHistogramBuffer(edepsInTarget,nVals,histogramVals,logBins,nbins);
+
+
 		for (int j = 0; j < nSamples; j++)
 		{
-			//Allocate CUB sort and histogram memory
-			void* histogramTempStorage = NULL;
-			size_t histogramTempStorageSize = 0;
-
-			void* sortByKeyTempStorage = NULL;
-			size_t sortByKeyTempStorageSize = 0;
-
-			void* reduceByKeyTempStorage = NULL;
-			size_t reduceByKeyTempStorageSize = 0;
 
 			//New track. Zero values
 			cudaMemset(NumInBox,0,sizeof(int));
@@ -501,31 +536,19 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 			//I think, because the sort_by_key operation takes *NumInSpheres as an argument
 			//If the kernel call is given, before NumInSpheres has finished updating, then it gets an incorrect value
-			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
-			cudaMalloc(&sortByKeyTempStorage,sortByKeyTempStorageSize); 
-			cub::DeviceRadixSort::SortPairs(sortByKeyTempStorage,sortByKeyTempStorageSize,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
-			
-			//Then reduce the energy depositions
-			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
-			cudaMalloc(&reduceByKeyTempStorage,reduceByKeyTempStorageSize); 
-			cub::DeviceReduce::ReduceByKey(reduceByKeyTempStorage,reduceByKeyTempStorageSize, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
 
-			//Check the behavior of varying this device synchronize! because if the next function is called, before NumberOfEdepsReduced is assigned, it could mess up the histogram right
-			//cudaDeviceSynchronize();
+			//Sort the edep volume pairs
+			cub::DeviceRadixSort::SortPairs(sortBuffer.storage,sortBuffer.size,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
 
-			//First call to the histogram allocates the temp storage and size
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
-			cudaMalloc(&histogramTempStorage,histogramTempStorageSize); 
-			cub::DeviceHistogram::HistogramRange(histogramTempStorage,histogramTempStorageSize,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
+			// reduce the energy depositions
+			cub::DeviceReduce::ReduceByKey(reduceBuffer.storage,reduceBuffer.size, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
+
+			//Create the histogram
+			cub::DeviceHistogram::HistogramRange(histogramBuffer.storage,histogramBuffer.size,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
 
 			//Accumulate the histogram values
 			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
-
-			cudaFree(sortByKeyTempStorage);
-			cudaFree(reduceByKeyTempStorage);
-			cudaFree(histogramTempStorage);
-			cudaDeviceSynchronize();
-			
+	
 		}
 
 		int number_of_values_in_histogram = 0;

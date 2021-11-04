@@ -6,14 +6,7 @@
 //Structs and typedefs
 //
 
-struct Track
-{ 
-	double x;
-	double y;
-	double z;
-	double edep; 
-};
-typedef struct Track Track; //this is a typdef which maps from struct Track --> Track. Just saves us from writing struct when we refer to the struct later.
+//Geometry
 
 struct SphericalGeometry
 {
@@ -35,7 +28,16 @@ struct SphericalGeometry
 	double sphereRadius;
 	int numSpheresLinear;
 };
-typedef struct SphericalGeometry SphericalGeometry;
+
+//Track-related
+
+struct Track
+{ 
+	double x;
+	double y;
+	double z;
+	double edep; 
+};
 
 struct VolumeEdepPair
 {
@@ -43,4 +45,16 @@ struct VolumeEdepPair
 	double* edep;
 	int* numElements; //this is type pointer but it should only point to a single value
 };
-typedef struct VolumeEdepPair VolumeEdepPair;
+
+//Miscellaneous
+
+struct CubStorageBuffer
+{
+	CubStorageBuffer()
+	{
+		storage = NULL;
+		size = 0;
+	}
+	void* storage;
+	size_t size;
+};
