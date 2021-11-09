@@ -267,7 +267,7 @@ __global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track *inputTrack
 		zIndex = llrint((inputTrack[trackIdInSphere[i]].z-geometry.greatestSphereOffset)/sphereDiameter);
 
 		//Determine the Index of the sphere hit
-		sphereHitIndex = xIndex + yIndex*(geometry.numSpheresLinear) + zIndex*pow(geometry.numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
+		sphereHitIndex = xIndex + yIndex*geometry.numSpheresLinear+ zIndex*geometry.numSpheresLinear*geometry.numSpheresLinear; //Keep in mind that for the index it starts counting at zero
 
 		//Write to volumeID and edepOutput
 		outputPair.volume[i] = sphereHitIndex;
@@ -530,7 +530,14 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		CubStorageBuffer reduceBuffer = AllocateCubReduceBuffer(edepsInTarget,nVals);
 		CubStorageBuffer histogramBuffer = AllocateCubHistogramBuffer(edepsInTarget,nVals,histogramVals,logBins,nbins);
 
+		//Configure cuda kernel launches
+		int blockSize;
+		int minGridSize;
+		int gridSize;
+		cudaOccupancyMaxPotentialBlockSize(&minGridSize,&blockSize,ScoreTrackInSphere,0,0);
+		gridSize = (nVals + blockSize - 1)/blockSize;
 
+		std::cout << gridSize << " " << blockSize << std::endl;
 		for (int j = 0; j < nSamples; j++)
 		{
 
@@ -539,9 +546,9 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			ZeroInt<<<1,1>>>(edepsInTarget.numElements);
 
 			//Filter and score the tracks
-			FilterInScoringBox<<<60,256>>>(sphericalGeometry,randomVals,deviceTrack,randomlyShiftedTrack,nVals,NumInBox,j);	
-			FilterTrackInSphere<<<60,256>>>(sphericalGeometry,randomlyShiftedTrack,NumInBox,edepsInTarget.numElements,inSphereTrackId); 
-			ScoreTrackInSphere<<<60,256>>>(sphericalGeometry,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
+			FilterInScoringBox<<<256,256>>>(sphericalGeometry,randomVals,deviceTrack,randomlyShiftedTrack,nVals,NumInBox,j);	
+			FilterTrackInSphere<<<256,256>>>(sphericalGeometry,randomlyShiftedTrack,NumInBox,edepsInTarget.numElements,inSphereTrackId); 
+			ScoreTrackInSphere<<<256,256>>>(sphericalGeometry,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
 
 			//Sort the edeps by volumeID, reduce (accumulate), and then place into histograms
 			SortReduceHistogram<<<1,1>>>(sortBuffer,reduceBuffer,histogramBuffer,edepsInTarget,sortedEdeps,reducedEdeps, nbins,histogramVals,logBins, reductionOperator);
