@@ -1,7 +1,6 @@
 //SuperTrack
 #include "CPUSuperimpose.hh"
 #include "GPUSuperimpose.cuh"
-#include "testCUDA.cuh"
 #include "utils.hh"
 //ROOT
 #include "TROOT.h"

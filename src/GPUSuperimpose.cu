@@ -1,7 +1,8 @@
 //SuperTrack
-#include "testCUDA.cuh"
 #include "utils.hh"
 #include "SuperTrackTypes.cuh"
+#include "Track.cuh"
+#include "CubStorageBuffer.cuh"
 //ROOT
 #include "TROOT.h"
 #include "TFile.h"
@@ -31,52 +32,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
    }
-}
-
-void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track *hostTrack, Track *deviceTrack)
-{
-	//Open the file in each process and make a Tree Reader
-	TFile f = TFile(std::get<3>(input));
-	TTreeReader trackReader("Tracks", &f);
-	trackReader.SetEntriesRange(std::get<0>(input),std::get<1>(input));
-	TTreeReaderValue<double_t> xReader(trackReader, "x [nm]");
-	TTreeReaderValue<double_t> yReader(trackReader, "y [nm]");
-	TTreeReaderValue<double_t> zReader(trackReader, "z [nm]");
-	TTreeReaderValue<double_t> edepReader(trackReader, "edep [eV]");
-
-	std::cout << "thread #: " << std::get<2>(input) << " starting at: " << std::to_string(std::get<0>(input)) << std::endl;
-
-	//Determine size of arrays. Define them. Then allcate unified memory on CPU and GPU
-	long nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
-	size_t trackSize = nVals * sizeof(double);
-	size_t trackStructSize = nVals*sizeof(Track);
-
-	//malloc and cudaMalloc our arrays respectively
-	hostTrack->x = (double *)malloc(trackSize);
-	hostTrack->y = (double *)malloc(trackSize);
-	hostTrack->z = (double *)malloc(trackSize);
-	hostTrack->edep = (double *)malloc(trackSize);
-	cudaMalloc(&(deviceTrack->x),trackSize);
-	cudaMalloc(&(deviceTrack->y),trackSize);
-	cudaMalloc(&(deviceTrack->z),trackSize);
-	cudaMalloc(&(deviceTrack->edep),trackSize);
-
-	//Fill the unified memory arrays from the CPU
-	for (long loopnum = 0; trackReader.Next(); loopnum++) 
-	{
-		hostTrack->x[loopnum] = *xReader;
-		hostTrack->y[loopnum] = *yReader;
-		hostTrack->z[loopnum] = *zReader;
-		hostTrack->edep[loopnum] = *edepReader;
-	}
-
-	//Copy track to GPU memory
-	cudaMemcpy(deviceTrack->x,hostTrack->x,trackSize,cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceTrack->y,hostTrack->y,trackSize,cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceTrack->z,hostTrack->z,trackSize,cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceTrack->edep,hostTrack->edep,trackSize,cudaMemcpyHostToDevice);
-
-	//TODO: free host track, maybe we can't free it yet because it's still being copied right
 }
 
 void GenerateRandomXYShift(const std::tuple<Int_t,Int_t,Int_t,TString> &input, float **randomVals, const int &nSamples, const long &random_seed)
@@ -284,15 +239,6 @@ __global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track inputTrack,
 	}
 }
 
-struct CUBAddOperator
-{
-    template <typename T>
-    CUB_RUNTIME_FUNCTION __forceinline__
-    T operator()(const T &a, const T &b) const {
-        return a+b;
-    }
-};
-
 __global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N)
 {
 	//Determine index and stride
@@ -317,44 +263,6 @@ VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
 }
 
 //Todo: create function for freeing GPUVolumeEdepPair
-
-CubStorageBuffer AllocateCubSortBuffer(VolumeEdepPair edepPairList, uint64_t nVals)
-{
-	//Create the buffer with default constructor
-	CubStorageBuffer returnBuffer = CubStorageBuffer();
-
-	//Call the CUB function to determine memory constraints, then malloc
-	cub::DeviceRadixSort::SortPairs(returnBuffer.storage,returnBuffer.size,edepPairList.volume,edepPairList.volume,edepPairList.edep,edepPairList.edep,nVals);
-	cudaMalloc(&returnBuffer.storage,returnBuffer.size); 
-
-	return returnBuffer;
-}
-
-CubStorageBuffer AllocateCubReduceBuffer(VolumeEdepPair edepPairList, uint64_t nVals)
-{
-	//Create the buffer with default constructor
-	CubStorageBuffer returnBuffer = CubStorageBuffer();
-	//Generic Reduction Operator
-	CUBAddOperator reductionOperator;
-
-	//Call the CUB function to determine memory constraints, then malloc
-	cub::DeviceReduce::ReduceByKey(returnBuffer.storage,returnBuffer.size, edepPairList.volume, edepPairList.volume, edepPairList.edep, edepPairList.edep, edepPairList.numElements, reductionOperator, nVals);
-	cudaMalloc(&returnBuffer.storage,returnBuffer.size); 
-
-	return returnBuffer;
-}
-
-CubStorageBuffer AllocateCubHistogramBuffer(VolumeEdepPair edepPairList, uint64_t nVals, int* histogramVals, double* logBins, int nbins)
-{
-	//Create the buffer with default constructor
-	CubStorageBuffer returnBuffer = CubStorageBuffer();
-
-	//Call the CUB function to determine memory constraints, then malloc
-	cub::DeviceHistogram::HistogramRange(returnBuffer.storage,returnBuffer.size, edepPairList.edep,histogramVals,nbins+1,logBins,nVals);
-	cudaMalloc(&returnBuffer.storage,returnBuffer.size); 
-
-	return returnBuffer;
-}
 
 __global__ void SortReduceHistogram(CubStorageBuffer sortBuffer, CubStorageBuffer reduceBuffer, CubStorageBuffer histogramBuffer, VolumeEdepPair edepsInTarget, VolumeEdepPair sortedEdeps, VolumeEdepPair reducedEdeps, int nbins,int* histogramVals, double* logBins, CUBAddOperator reductionOperator)
 {
@@ -423,21 +331,14 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 	auto workItem = [=](std::tuple<Int_t,Int_t,Int_t,TString> input) //the = sign captures everything in the enclosing function by value. Meaning it makes a process local copy.
 	{
-		//Calculate size information for memory allocations
 		int nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
-		size_t trackSize = nVals * sizeof(double); 
-		size_t trackStructSize = nVals *sizeof(Track);
 
 		//Define local and GPU track pointers
-		Track hostTrack; Track deviceTrack; 
-		LoadTrack(input, &hostTrack, &deviceTrack); //load track from disk and copy to GPU
+		Track deviceTrack = Track(nVals); 
+		Track::LoadTrack(input, &deviceTrack); //load track from disk and copy to GPU
 
 		//Allocate memory for the tracks found to be within the box
-		Track randomlyShiftedTrack; 
-		cudaMalloc(&(randomlyShiftedTrack.x),trackSize); 
-		cudaMalloc(&(randomlyShiftedTrack.y),trackSize); 
-		cudaMalloc(&(randomlyShiftedTrack.z),trackSize); 
-		cudaMalloc(&(randomlyShiftedTrack.edep),trackSize); 
+		Track randomlyShiftedTrack = Track(nVals);
 
 		//Allocate memory to store the TrackIDs of the points within spheres
 		int *inSphereTrackId;
@@ -446,6 +347,10 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		//Allocate GPU only memory for random numbers
 		float *randomVals; 
 		GenerateRandomXYShift(input, &randomVals, nSamples, random_seed); //Allocate and fill with random numbers
+
+		//TODO: make a CubSortReduceHistogram class, hide away the edep volume pairs and buffers
+
+		//TODO: make a histogram class (should make this before the CubSortReduceHistogram class) 
 
 		//Define histograms
 		double *logBins; 
@@ -465,9 +370,9 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		CUBAddOperator reductionOperator;
 
 		//Allocate memory for the temporary storage the CUB operations needs
-		CubStorageBuffer sortBuffer = AllocateCubSortBuffer(edepsInTarget,nVals);
-		CubStorageBuffer reduceBuffer = AllocateCubReduceBuffer(edepsInTarget,nVals);
-		CubStorageBuffer histogramBuffer = AllocateCubHistogramBuffer(edepsInTarget,nVals,histogramVals,logBins,nbins);
+		CubStorageBuffer sortBuffer = CubStorageBuffer::AllocateCubSortBuffer(edepsInTarget,nVals);
+		CubStorageBuffer reduceBuffer = CubStorageBuffer::AllocateCubReduceBuffer(edepsInTarget,nVals);
+		CubStorageBuffer histogramBuffer = CubStorageBuffer::AllocateCubHistogramBuffer(edepsInTarget,nVals,histogramVals,logBins,nbins);
 
 		//Configure cuda kernel launches
 		/*int blockSize;

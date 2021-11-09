@@ -1,5 +1,4 @@
 //SuperTrack
-#include "testCUDA.cuh"
 #include "utils.hh"
 //ROOT
 #include "TROOT.h"

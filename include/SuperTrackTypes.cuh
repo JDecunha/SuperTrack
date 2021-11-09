@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TMath.h"
+#include <cub/cub.cuh>
 
 //
 //Structs and typedefs
@@ -31,22 +32,6 @@ struct SphericalGeometry
 
 //Track-related
 
-/*struct Track
-{ 
-	double x;
-	double y;
-	double z;
-	double edep; 
-};*/
-
-struct Track
-{ 
-	double* x;
-	double* y;
-	double* z;
-	double* edep; 
-};
-
 struct VolumeEdepPair
 {
 	uint64_t* volume;
@@ -56,13 +41,11 @@ struct VolumeEdepPair
 
 //Miscellaneous
 
-struct CubStorageBuffer
+struct CUBAddOperator
 {
-	CubStorageBuffer()
-	{
-		storage = NULL;
-		size = 0;
-	}
-	void* storage;
-	size_t size;
+    template <typename T>
+    CUB_RUNTIME_FUNCTION __forceinline__
+    T operator()(const T &a, const T &b) const {
+        return a+b;
+    }
 };

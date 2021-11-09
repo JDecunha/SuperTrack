@@ -4,8 +4,6 @@ cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 project (SuperTrack VERSION 1.0.0 LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD "17")
 
-add_library(cuda_test STATIC src/testCUDA.cu include/testCUDA.cuh)
-
 ###
 ### Find and include ROOT libraries
 ###
@@ -27,6 +25,6 @@ add_executable(SuperTrack SuperTrack.cu)
 	set_target_properties(src PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 #Now link my libraries
-	target_link_libraries(SuperTrack PRIVATE src cuda_test ${ROOT_LIBRARIES} -lcurand)
+	target_link_libraries(SuperTrack PRIVATE src ${ROOT_LIBRARIES} -lcurand)
 
 
