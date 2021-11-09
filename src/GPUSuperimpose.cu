@@ -412,6 +412,21 @@ CubStorageBuffer AllocateCubHistogramBuffer(VolumeEdepPair edepPairList, uint64_
 	return returnBuffer;
 }
 
+__global__ void SortReduceHistogram(CubStorageBuffer sortBuffer, CubStorageBuffer reduceBuffer, CubStorageBuffer histogramBuffer, VolumeEdepPair edepsInTarget, VolumeEdepPair sortedEdeps, VolumeEdepPair reducedEdeps, int nbins,int* histogramVals, double* logBins, CUBAddOperator reductionOperator)
+{
+	//Sort the edep volume pairs
+	cub::DeviceRadixSort::SortPairs(sortBuffer.storage,sortBuffer.size,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
+	// reduce the energy depositions
+	cub::DeviceReduce::ReduceByKey(reduceBuffer.storage,reduceBuffer.size, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
+	//Create the histogram
+	cub::DeviceHistogram::HistogramRange(histogramBuffer.storage,histogramBuffer.size,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
+}
+
+__global__ void ZeroInt(int* toZero)
+{
+	*toZero = 0;
+}
+
 __global__ void ReadVolumeEdepPair(VolumeEdepPair* pair)
 {
 	for (int i = 0; i < 10000; i++)
@@ -465,11 +480,6 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	TNamed* voxelSideLength;
 	f.GetObject("Voxel side length [mm]",voxelSideLength);
 	float scoring_square_half_length = atof(voxelSideLength->GetTitle())*1e6;
-	int num_spheres_linear = TMath::Ceil(((scoring_square_half_length*2)/scoring_sphere_spacing)); 
-	long long int num_spheres_total = TMath::Power((num_spheres_linear),3);
-	double_t top_sphere_offset = -(((float(num_spheres_linear))/2)-0.5)*scoring_sphere_spacing;
-	float_t scoringSphereRadius = scoring_sphere_diameter/2;
-
 	SphericalGeometry sphericalGeometry = SphericalGeometry(scoring_square_half_length,scoring_sphere_diameter);
 
 	//We are done reading the Tree single threaded. Close it.
@@ -525,30 +535,19 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		{
 
 			//New track. Zero values
-			cudaMemset(NumInBox,0,sizeof(int));
-			cudaMemset(edepsInTarget.numElements,0,sizeof(int));
+			ZeroInt<<<1,1>>>(NumInBox);
+			ZeroInt<<<1,1>>>(edepsInTarget.numElements);
 
+			//Filter and score the tracks
 			FilterInScoringBox<<<60,256>>>(sphericalGeometry,randomVals,deviceTrack,randomlyShiftedTrack,nVals,NumInBox,j);	
 			FilterTrackInSphere<<<60,256>>>(sphericalGeometry,randomlyShiftedTrack,NumInBox,edepsInTarget.numElements,inSphereTrackId); 
 			ScoreTrackInSphere<<<60,256>>>(sphericalGeometry,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
-		
-			cudaDeviceSynchronize();
 
-			//I think, because the sort_by_key operation takes *NumInSpheres as an argument
-			//If the kernel call is given, before NumInSpheres has finished updating, then it gets an incorrect value
-
-			//Sort the edep volume pairs
-			cub::DeviceRadixSort::SortPairs(sortBuffer.storage,sortBuffer.size,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
-
-			// reduce the energy depositions
-			cub::DeviceReduce::ReduceByKey(reduceBuffer.storage,reduceBuffer.size, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
-
-			//Create the histogram
-			cub::DeviceHistogram::HistogramRange(histogramBuffer.storage,histogramBuffer.size,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
+			//Sort the edeps by volumeID, reduce (accumulate), and then place into histograms
+			SortReduceHistogram<<<1,1>>>(sortBuffer,reduceBuffer,histogramBuffer,edepsInTarget,sortedEdeps,reducedEdeps, nbins,histogramVals,logBins, reductionOperator);
 
 			//Accumulate the histogram values
 			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
-	
 		}
 
 		int number_of_values_in_histogram = 0;
@@ -562,10 +561,12 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 		std::cout << number_of_values_in_histogram << std::endl;
 		//TODO: close my file at some point */
-		//cudaDeviceSynchronize();
-	  	//Initialize the histogram
+	  
+	  //Initialize the histogram
 		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
 		return lineal_histogram;
+
+		//TODO: Free all the memory I allocated too
 
 	};
 
@@ -580,6 +581,7 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	return lineal_histogram;
 
 }
+
 
 //TODO: Change this to work with a C-style struct later, so x,y,z,edep are all one entry
 /*__global__ void SuperimposeTrack(double greatestSphereOffset, double sphereDiameter, long numSpheresLinear, float* randomVals, double* x, double* y, double* z, double* edep,long *volumeID, double *edepOutput, long numElements,int oversampleIterationNumber)
