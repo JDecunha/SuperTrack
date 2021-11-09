@@ -31,12 +31,20 @@ struct SphericalGeometry
 
 //Track-related
 
-struct Track
+/*struct Track
 { 
 	double x;
 	double y;
 	double z;
 	double edep; 
+};*/
+
+struct Track
+{ 
+	double* x;
+	double* y;
+	double* z;
+	double* edep; 
 };
 
 struct VolumeEdepPair

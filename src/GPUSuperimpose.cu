@@ -33,7 +33,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
-void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track **hostTrack, Track **deviceTrack)
+void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track *hostTrack, Track *deviceTrack)
 {
 	//Open the file in each process and make a Tree Reader
 	TFile f = TFile(std::get<3>(input));
@@ -52,20 +52,29 @@ void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track **hostT
 	size_t trackStructSize = nVals*sizeof(Track);
 
 	//malloc and cudaMalloc our arrays respectively
-	*hostTrack = (Track *)malloc(trackStructSize);
-	cudaMalloc(deviceTrack,trackStructSize);
+	hostTrack->x = (double *)malloc(trackSize);
+	hostTrack->y = (double *)malloc(trackSize);
+	hostTrack->z = (double *)malloc(trackSize);
+	hostTrack->edep = (double *)malloc(trackSize);
+	cudaMalloc(&(deviceTrack->x),trackSize);
+	cudaMalloc(&(deviceTrack->y),trackSize);
+	cudaMalloc(&(deviceTrack->z),trackSize);
+	cudaMalloc(&(deviceTrack->edep),trackSize);
 
 	//Fill the unified memory arrays from the CPU
 	for (long loopnum = 0; trackReader.Next(); loopnum++) 
 	{
-		(*hostTrack)[loopnum].x = *xReader;
-		(*hostTrack)[loopnum].y = *yReader;
-		(*hostTrack)[loopnum].z = *zReader;
-		(*hostTrack)[loopnum].edep = *edepReader;
+		hostTrack->x[loopnum] = *xReader;
+		hostTrack->y[loopnum] = *yReader;
+		hostTrack->z[loopnum] = *zReader;
+		hostTrack->edep[loopnum] = *edepReader;
 	}
 
 	//Copy track to GPU memory
-	cudaMemcpy(*deviceTrack,*hostTrack,trackStructSize,cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceTrack->x,hostTrack->x,trackSize,cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceTrack->y,hostTrack->y,trackSize,cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceTrack->z,hostTrack->z,trackSize,cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceTrack->edep,hostTrack->edep,trackSize,cudaMemcpyHostToDevice);
 
 	//TODO: free host track, maybe we can't free it yet because it's still being copied right
 }
@@ -103,7 +112,7 @@ void GenerateLogHistogram(double **logBins, int **histogramVals, int **histogram
 	cudaMemset(*histogramValsAccumulated,0,nbins*sizeof(int));
 }
 
-__global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals, Track *inputTrack, Track *outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
+__global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals, Track inputTrack, Track outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
 {
 	//This function
 	//1.) Applies the random shift to the x,y coordinates
@@ -133,8 +142,8 @@ __global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals
 	for (int i = index; i < numElements; i+=stride)
 	{
 		//Apply random shift
-		x_shifted = inputTrack[i].x + x_shift;
-		y_shifted = inputTrack[i].y + y_shift;
+		x_shifted = inputTrack.x[i] + x_shift;
+		y_shifted = inputTrack.y[i] + y_shift;
 
 		//Set local position to negative value, only takes on positive value if predicate is true
 		localPosition = -1;
@@ -167,16 +176,16 @@ __global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals
 			outputIndex = localPosition+localIndexCounter;
 			//printf("current loop i: %d",i);
 			//Copy the track inside the box over to the new array
-			outputTrack[outputIndex].x = x_shifted;
-			outputTrack[outputIndex].y = y_shifted;
-			outputTrack[outputIndex].z = inputTrack[i].z;
-			outputTrack[outputIndex].edep = inputTrack[i].edep;
+			outputTrack.x[outputIndex] = x_shifted;
+			outputTrack.y[outputIndex] = y_shifted;
+			outputTrack.z[outputIndex] = inputTrack.z[i];
+			outputTrack.edep[outputIndex] = inputTrack.edep[i];
 		}
 		__syncthreads();
 	}
 }
 
-__global__ void FilterTrackInSphere(SphericalGeometry geometry, Track *inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere)
+__global__ void FilterTrackInSphere(SphericalGeometry geometry, Track inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere)
 {
 
 	//printf("%f %f \n",geometry.sphereDiameter,geometry.scoringRegionHalfLength);
@@ -203,9 +212,9 @@ __global__ void FilterTrackInSphere(SphericalGeometry geometry, Track *inputTrac
 		//For performance reasons, we work in an arbitrary coordinate system here, rather than the "global" coordinate system
 		//The "global" coordinate systrem is relative to the greatest sphere offset
 		//In the later scoring kernel we work in the global coordinate system, and that's why we subtract the greatest sphere offset there
-		distFromNearestSphereX = llrint((inputTrack[i].x)/sphereDiameter)*geometry.sphereDiameter-(inputTrack[i].x);
-		distFromNearestSphereY = llrint((inputTrack[i].y)/sphereDiameter)*geometry.sphereDiameter-(inputTrack[i].y); 
-		distFromNearestSphereZ = llrint((inputTrack[i].z)/sphereDiameter)*geometry.sphereDiameter-(inputTrack[i].z); 
+		distFromNearestSphereX = llrint((inputTrack.x[i])/sphereDiameter)*geometry.sphereDiameter-(inputTrack.x[i]);
+		distFromNearestSphereY = llrint((inputTrack.y[i])/sphereDiameter)*geometry.sphereDiameter-(inputTrack.y[i]); 
+		distFromNearestSphereZ = llrint((inputTrack.z[i])/sphereDiameter)*geometry.sphereDiameter-(inputTrack.z[i]); 
 
 		//Determine if inside the nearest sphere
 		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
@@ -246,7 +255,7 @@ __global__ void FilterTrackInSphere(SphericalGeometry geometry, Track *inputTrac
 	}
 }
 
-__global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track *inputTrack, int *numElements, int *trackIdInSphere, VolumeEdepPair outputPair)
+__global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track inputTrack, int *numElements, int *trackIdInSphere, VolumeEdepPair outputPair)
 {
 	//move all of the variable definitions out of the for loop
 	long xIndex, yIndex, zIndex, sphereHitIndex;
@@ -262,16 +271,16 @@ __global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track *inputTrack
 	//Loop over all the energy deposition points
 	for (uint64_t i = index; i < *numElements; i+=stride)
 	{		
-		xIndex = llrint((inputTrack[trackIdInSphere[i]].x-geometry.greatestSphereOffset)/sphereDiameter);
-		yIndex = llrint((inputTrack[trackIdInSphere[i]].y-geometry.greatestSphereOffset)/sphereDiameter);
-		zIndex = llrint((inputTrack[trackIdInSphere[i]].z-geometry.greatestSphereOffset)/sphereDiameter);
+		xIndex = llrint((inputTrack.x[trackIdInSphere[i]]-geometry.greatestSphereOffset)/sphereDiameter);
+		yIndex = llrint((inputTrack.y[trackIdInSphere[i]]-geometry.greatestSphereOffset)/sphereDiameter);
+		zIndex = llrint((inputTrack.z[trackIdInSphere[i]]-geometry.greatestSphereOffset)/sphereDiameter);
 
 		//Determine the Index of the sphere hit
 		sphereHitIndex = xIndex + yIndex*geometry.numSpheresLinear+ zIndex*geometry.numSpheresLinear*geometry.numSpheresLinear; //Keep in mind that for the index it starts counting at zero
 
 		//Write to volumeID and edepOutput
 		outputPair.volume[i] = sphereHitIndex;
-		outputPair.edep[i] = inputTrack[trackIdInSphere[i]].edep/linealDenominator; //this should be ev/nm which is same a kev/um
+		outputPair.edep[i] = inputTrack.edep[trackIdInSphere[i]]/linealDenominator; //this should be ev/nm which is same a kev/um
 	}
 }
 
@@ -295,71 +304,6 @@ __global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N)
 		accumulated[i] = accumulated[i]+temp[i];
 	}
 }
-__global__ void NonsenseKernel(float *value)
-{
-	printf("Took in the value:%f", value[0]);
-	/*int lastval = 0;
-	for (int i = 0; i < 10; i++)
-	{
-		lastval = atomicAdd(atomicValue,1);
-		printf("Last atomic value %d: \n",lastval);
-	}*/
-}
-
-void testfunction(curandGenerator_t &gen,float *vals)
-{
-	curandGenerateUniform(gen,vals,2*20000);
-	cudaDeviceSynchronize();
-}
-
-void mallocfunction(float **vals)
-{
-	//okay wait, so calling &vals in here, is the pointer to the local object, and not the address of vals
-	//Wow! so I pass in a pointer to a pointer. And then feed that to cudaMalloc direclty.
-	//Intuitively what this means it memory address pointing to pointer of array of floats --> memory address point to array of floats --> start of floats
-	//We had to do this because of the way the malloc works. In c you can't really pass by reference, so when you're mallocing something
-	//you need to pass a pointer, to the pointer that you then want to work on
-	//I promise it makes sense if you think about it for a moment.
-
-	cudaMalloc(vals,2*sizeof(float)*20000); 
-	cudaDeviceSynchronize();
-}
-
-void readHostTrack(Track *hostTrack)
-{
-	for(int i = 0; i < 100000; i++)
-	{
-		std::cout << hostTrack[i].x << std::endl;
-	}
-}
-__global__ void readDeviceTrack(Track *deviceTrack)
-{
-	for(int i = 0;i<100000;i++)
-	{
-		printf("%f \n",deviceTrack[i].x);
-	}
-}
-__global__ void readDeviceEdepList(double *edeps)
-{
-	for(int i = 0;i<200;i++)
-	{
-		printf("%f \n",edeps[i]);
-	}
-}
-
-__global__ void indexTestingKernel()
-{
- 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-	int stride = blockDim.x * gridDim.x;
-	printf("index %d, stride %d \n",index,stride);
-}
-
-/*__global__ void extractCudaInformation()
-{
-	printf("Cuda_ARCH: %s",__CUDA_ARCH__);
-	printf("CUDA_ACC: %s",__CUDACC__);
-	printf("CUDA_RDC: %s",__CUDACC_RDC__);
-}*/
 
 //TODO:Change this back to Malloc after testing
 VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
@@ -427,14 +371,6 @@ __global__ void ZeroInt(int* toZero)
 	*toZero = 0;
 }
 
-__global__ void ReadVolumeEdepPair(VolumeEdepPair* pair)
-{
-	for (int i = 0; i < 10000; i++)
-	{
-		printf("volume: %d",pair->volume[i]);
-	}	
-}
-
 TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 20000, Long_t random_seed = time(NULL))
 {
 	//open the file and retrieve the trees
@@ -493,12 +429,15 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		size_t trackStructSize = nVals *sizeof(Track);
 
 		//Define local and GPU track pointers
-		Track *hostTrack; Track *deviceTrack; 
+		Track hostTrack; Track deviceTrack; 
 		LoadTrack(input, &hostTrack, &deviceTrack); //load track from disk and copy to GPU
 
 		//Allocate memory for the tracks found to be within the box
-		Track *randomlyShiftedTrack; 
-		cudaMalloc(&randomlyShiftedTrack,trackStructSize); 
+		Track randomlyShiftedTrack; 
+		cudaMalloc(&(randomlyShiftedTrack.x),trackSize); 
+		cudaMalloc(&(randomlyShiftedTrack.y),trackSize); 
+		cudaMalloc(&(randomlyShiftedTrack.z),trackSize); 
+		cudaMalloc(&(randomlyShiftedTrack.edep),trackSize); 
 
 		//Allocate memory to store the TrackIDs of the points within spheres
 		int *inSphereTrackId;
@@ -531,13 +470,13 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		CubStorageBuffer histogramBuffer = AllocateCubHistogramBuffer(edepsInTarget,nVals,histogramVals,logBins,nbins);
 
 		//Configure cuda kernel launches
-		int blockSize;
+		/*int blockSize;
 		int minGridSize;
 		int gridSize;
 		cudaOccupancyMaxPotentialBlockSize(&minGridSize,&blockSize,ScoreTrackInSphere,0,0);
 		gridSize = (nVals + blockSize - 1)/blockSize;
+		std::cout << gridSize << " " << blockSize << std::endl;*/
 
-		std::cout << gridSize << " " << blockSize << std::endl;
 		for (int j = 0; j < nSamples; j++)
 		{
 
@@ -574,6 +513,9 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		return lineal_histogram;
 
 		//TODO: Free all the memory I allocated too
+		cudaFree(inSphereTrackId);
+		cudaFree(randomVals);
+
 
 	};
 
@@ -588,132 +530,3 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	return lineal_histogram;
 
 }
-
-
-//TODO: Change this to work with a C-style struct later, so x,y,z,edep are all one entry
-/*__global__ void SuperimposeTrack(double greatestSphereOffset, double sphereDiameter, long numSpheresLinear, float* randomVals, double* x, double* y, double* z, double* edep,long *volumeID, double *edepOutput, long numElements,int oversampleIterationNumber)
-{
-	//Our entire geometry should be able to be described by only the greatest offset, the sphere diameter and number of spheres in a line. That's useful
-	double sphereRadius = sphereDiameter/2;
-	double linealDenominator = (2./3.)*sphereDiameter; //calculate this here as an efficiency gain
-
-	//Determine index and stride
- 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-	int stride = blockDim.x * gridDim.x;
-
-	//Convert random shifts  in to appropriate range
-	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*greatestSphereOffset*2)-greatestSphereOffset);
-	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*greatestSphereOffset*2)-greatestSphereOffset);
-	//printf("x_shift: %f \n",randomVals[(oversampleIterationNumber*2)]);
-	//printf("y_shift: %f \n",randomVals[(oversampleIterationNumber*2+1)]);
-	//printf("Greatest sphere offset: %f \n", greatestSphereOffset);
-
-	//Loop over all the energy deposition points
-	for (long i = index; i < numElements; i+=stride)
-	{
-		//Write a zero to edepOutput and volumeID. Doing this here avoids warp divergence later.
-		edepOutput[i] = 0; volumeID[i] = 0;
-
-		//Apply random shift. My numbers that come in are floats from 0.0 to 1.0. Have to shift them to the desired range
-		double x_shifted = x[i] + x_shift;
-		double y_shifted = y[i] + y_shift;
-
-		//Check if inside box
-		if (abs(x_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(y_shifted) < abs(greatestSphereOffset)+(sphereRadius) && abs(z[i]) < abs(greatestSphereOffset)+(sphereRadius))
-		{
-			//Convert position to index in the grid of spheres
-			//printf("x_shifted: %f \n",x_shifted);
-			long xIndex = llround((x_shifted-greatestSphereOffset)/sphereDiameter);
-			long yIndex = llround((y_shifted-greatestSphereOffset)/sphereDiameter);
-			long zIndex = llround((z[i]-greatestSphereOffset)/sphereDiameter);
-			
-			//Determine the location of the nearest sphere in the grid (with 0,0,0 being the top left sphere, different coordinate system than the ptcls are in)
-			double nearestSphereX = xIndex*sphereDiameter;
-			double nearestSphereY = yIndex*sphereDiameter;
-			double nearestSphereZ = zIndex*sphereDiameter;
-
-			//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
-			//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
-			//Another aside: calculating in cubes would reduce complexity as well
-			double distFromNearestSphereX = nearestSphereX-(x_shifted-greatestSphereOffset);
-			double distFromNearestSphereY = nearestSphereY-(y_shifted-greatestSphereOffset); 
-			double distFromNearestSphereZ = nearestSphereZ-(z[i]-greatestSphereOffset); 
-
-			//Determine if inside the nearest sphere
-			double dist = pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2);
-			dist = sqrt(dist);
-
-			if (dist <= sphereRadius)
-			{
-				//Determine the Index of the sphere hit
-				long sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
-
-				//Write to volumeID and edepOutput
-				volumeID[i] = sphereHitIndex;
-				edepOutput[i] = edep[i]/linealDenominator; //this should be ev/nm which is same a kev/um
-				//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
-			}
-		}
-	}
-}*/
-
-/*__global__ void ScoreTrackInSphere(double greatestSphereOffset, double sphereRadius, long numSpheresLinear, Track *inputTrack, int *numElements, long *volumeID, double *edepOutput, int *numElementsCompacted)
-{
-
-	double sphereDiameter = sphereRadius*2;
-	double linealDenominator = (2./3.)*sphereDiameter; 
-
-	//Determine index and stride
- 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-	int stride = blockDim.x * gridDim.x;
-
-	//move all of the variable definitions out of the for loop
-	long xIndex, yIndex, zIndex, sphereHitIndex;
-	double nearestSphereX, nearestSphereY, nearestSphereZ, distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
-	double xRelativeToEdge, yRelativeToEdge, zRelativeToEdge;
-	int outputIndex;
-
-	//Loop over all the energy deposition points
-	for (long i = index; i < *numElements; i+=stride)
-	{
-		xRelativeToEdge = inputTrack[i].x-greatestSphereOffset;
-		yRelativeToEdge = inputTrack[i].y-greatestSphereOffset;
-		zRelativeToEdge = inputTrack[i].z-greatestSphereOffset;
-
-		//Convert position to index in the grid of spheres
-		//printf("x_shifted: %f \n",x_shifted);
-		xIndex = llround((xRelativeToEdge)/sphereDiameter);
-		yIndex = llround((yRelativeToEdge)/sphereDiameter);
-		zIndex = llround((zRelativeToEdge)/sphereDiameter);
-		
-		//Determine the location of the nearest sphere in the grid (with 0,0,0 being the top left sphere, different coordinate system than the ptcls are in)
-		nearestSphereX = xIndex*sphereDiameter;
-		nearestSphereY = yIndex*sphereDiameter;
-		nearestSphereZ = zIndex*sphereDiameter;
-
-		//Find the distance from the nearest sphere. You have to shift x_shift by gSO to get in the same coordinate system as the sphere grid
-		//An aside: I feel like there is probably a way that you could define the sphere grid that might reduce the complexity of this kernel
-		//Another aside: calculating in cubes would reduce complexity as well
-		distFromNearestSphereX = nearestSphereX-(xRelativeToEdge);
-		distFromNearestSphereY = nearestSphereY-(yRelativeToEdge); 
-		distFromNearestSphereZ = nearestSphereZ-(zRelativeToEdge); 
-
-		//Determine if inside the nearest sphere
-		dist = pow(distFromNearestSphereX,2)+pow(distFromNearestSphereY,2)+pow(distFromNearestSphereZ,2);
-		dist = sqrt(dist);
-
-		if (dist <= sphereRadius)
-		{
-			//Determine the Index of the sphere hit
-			sphereHitIndex = xIndex + yIndex*(numSpheresLinear) + zIndex*pow(numSpheresLinear,2); //Keep in mind that for the index it starts counting at zero
-			
-			//Atomically add to the global counter for the output array length
-			outputIndex = atomicAdd(numElementsCompacted,1);
-
-			//Write to volumeID and edepOutput
-			volumeID[outputIndex] = sphereHitIndex;
-			edepOutput[outputIndex] = inputTrack[i].edep/linealDenominator; //this should be ev/nm which is same a kev/um
-			//printf("volumeID: %ld %ld %ld edep: %f. \n",xIndex,yIndex,zIndex,edepOutput[i]);
-		}
-	}
-}*/
