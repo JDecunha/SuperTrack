@@ -41,7 +41,7 @@ void GPU_lineal_test()
 {
 	int start_time = time(0); cout << "ROOT Program Beginning" << endl; 	
 
-	TH1F histo = score_lineal_GPU("/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/4060394578999227944_thread_0.root",5e3,5e3,2,2000);
+	TH1F histo = score_lineal_GPU("/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/4060394578999227944_thread_0.root",5e3,5e3,2,100);
 
 	int end_time = time(0); cout << "ROOT Program Ending. Seconds elapsed: " << (end_time-start_time) << endl;	
 }

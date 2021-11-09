@@ -3,6 +3,7 @@
 #include "SuperTrackTypes.cuh"
 #include "Track.cuh"
 #include "CubStorageBuffer.cuh"
+#include "Histogram.cuh"
 //ROOT
 #include "TROOT.h"
 #include "TFile.h"
@@ -333,7 +334,7 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	{
 		int nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
 
-		//Define local and GPU track pointers
+		//Define Track
 		Track deviceTrack = Track(nVals); 
 		Track::LoadTrack(input, &deviceTrack); //load track from disk and copy to GPU
 
@@ -350,14 +351,8 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 		//TODO: make a CubSortReduceHistogram class, hide away the edep volume pairs and buffers
 
-		//TODO: make a histogram class (should make this before the CubSortReduceHistogram class) 
-
-		//Define histograms
-		double *logBins; 
-		int* histogramVals; 
-		int* histogramValsAccumulated; 
-		int nbins = 200; float binLowerMagnitude = -1; float binUpperMagnitude = 2; //Set histogram parameters
-		GenerateLogHistogram(&logBins, &histogramVals, &histogramValsAccumulated, nbins, binLowerMagnitude, binUpperMagnitude);
+		//Make histogram
+		Histogram histogram = Histogram(200,-1,2,"log");
 		
 		//Allocate GPU only memory for the volume:edep paired list
 		VolumeEdepPair edepsInTarget = AllocateGPUVolumeEdepPair(nVals);
@@ -372,7 +367,7 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		//Allocate memory for the temporary storage the CUB operations needs
 		CubStorageBuffer sortBuffer = CubStorageBuffer::AllocateCubSortBuffer(edepsInTarget,nVals);
 		CubStorageBuffer reduceBuffer = CubStorageBuffer::AllocateCubReduceBuffer(edepsInTarget,nVals);
-		CubStorageBuffer histogramBuffer = CubStorageBuffer::AllocateCubHistogramBuffer(edepsInTarget,nVals,histogramVals,logBins,nbins);
+		CubStorageBuffer histogramBuffer = CubStorageBuffer::AllocateCubHistogramBuffer(edepsInTarget,nVals,histogram._histogramVals,histogram._binEdges,histogram._nbins);
 
 		//Configure cuda kernel launches
 		/*int blockSize;
@@ -395,19 +390,19 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			ScoreTrackInSphere<<<256,256>>>(sphericalGeometry,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
 
 			//Sort the edeps by volumeID, reduce (accumulate), and then place into histograms
-			SortReduceHistogram<<<1,1>>>(sortBuffer,reduceBuffer,histogramBuffer,edepsInTarget,sortedEdeps,reducedEdeps, nbins,histogramVals,logBins, reductionOperator);
+			SortReduceHistogram<<<1,1>>>(sortBuffer,reduceBuffer,histogramBuffer,edepsInTarget,sortedEdeps,reducedEdeps, histogram._nbins,histogram._histogramVals, histogram._binEdges, reductionOperator);
 
 			//Accumulate the histogram values
-			AccumulateHistogramVals<<<4,32>>>(histogramVals,histogramValsAccumulated,nbins);
+			histogram.Accumulate();
 		}
 
 		int number_of_values_in_histogram = 0;
 		cudaDeviceSynchronize();
 		//Read out histogram
-		for (int i = 0; i < nbins; i++)
+		for (int i = 0; i < histogram._nbins; i++)
 		{
-			number_of_values_in_histogram += histogramValsAccumulated[i];
-			std::cout << "Bin: " << logBins[i] << " Counts: " << histogramValsAccumulated[i] << std::endl;
+			number_of_values_in_histogram += histogram._histogramValsAccumulated[i];
+			std::cout << "Bin: " << histogram._binEdges[i] << " Counts: " << histogram._histogramValsAccumulated[i] << std::endl;
 		}
 
 		std::cout << number_of_values_in_histogram << std::endl;
