@@ -10,9 +10,9 @@ class CubStorageBuffer
 		CubStorageBuffer();
 		~CubStorageBuffer();
 
-		static CubStorageBuffer AllocateCubSortBuffer(VolumeEdepPair edepPairList, uint64_t nVals);
-		static CubStorageBuffer AllocateCubReduceBuffer(VolumeEdepPair edepPairList, uint64_t nVals);
-		static CubStorageBuffer AllocateCubHistogramBuffer(VolumeEdepPair edepPairList, uint64_t nVals, int* histogramVals, double* logBins, int nbins);
+		static CubStorageBuffer AllocateCubSortBuffer(VolumeEdepPair edepPairList);
+		static CubStorageBuffer AllocateCubReduceBuffer(VolumeEdepPair edepPairList);
+		static CubStorageBuffer AllocateCubHistogramBuffer(VolumeEdepPair edepPairList, int* histogramVals, double* logBins, int nbins);
 		
 		void* storage;
 		size_t size;

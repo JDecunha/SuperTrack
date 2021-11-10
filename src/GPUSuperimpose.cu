@@ -350,27 +350,16 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		float *randomVals; 
 		GenerateRandomXYShift(input, &randomVals, nSamples, random_seed); //Allocate and fill with random numbers
 
-		//TODO: make a CubSortReduceHistogram class, hide away the edep volume pairs and buffers
+		//Allocate GPU only memory for the volume:edep paired list
+		VolumeEdepPair edepsInTarget;
+		edepsInTarget.Allocate(nVals);
 
 		//Make histogram
 		Histogram histogram = Histogram(200,-1,2,"log");
-		histogram.Allocate();
+		histogram.Allocate(edepsInTarget);
 		
-		//Allocate GPU only memory for the volume:edep paired list
-		VolumeEdepPair edepsInTarget, sortedEdeps, reducedEdeps;
-		edepsInTarget.Allocate(nVals);
-		sortedEdeps.Allocate(nVals);
-		reducedEdeps.Allocate(nVals);
-
 		int *NumInBox; 
 		cudaMallocManaged(&NumInBox,sizeof(int)); 
-
-		CUBAddOperator reductionOperator;
-
-		//Allocate memory for the temporary storage the CUB operations needs
-		CubStorageBuffer sortBuffer = CubStorageBuffer::AllocateCubSortBuffer(edepsInTarget,nVals);
-		CubStorageBuffer reduceBuffer = CubStorageBuffer::AllocateCubReduceBuffer(edepsInTarget,nVals);
-		CubStorageBuffer histogramBuffer = CubStorageBuffer::AllocateCubHistogramBuffer(edepsInTarget,nVals,histogram._histogramVals,histogram._binEdges,histogram._nbins);
 
 		//Configure cuda kernel launches
 		/*int blockSize;
@@ -382,7 +371,6 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 		for (int j = 0; j < nSamples; j++)
 		{
-
 			//New track. Zero values
 			ZeroInt<<<1,1>>>(NumInBox);
 			ZeroInt<<<1,1>>>(edepsInTarget.numElements);
@@ -393,10 +381,7 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 			ScoreTrackInSphere<<<256,256>>>(sphericalGeometry,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
 
 			//Sort the edeps by volumeID, reduce (accumulate), and then place into histograms
-			SortReduceHistogram<<<1,1>>>(sortBuffer,reduceBuffer,histogramBuffer,edepsInTarget,sortedEdeps,reducedEdeps, histogram._nbins,histogram._histogramVals, histogram._binEdges, reductionOperator);
-
-			//Accumulate the histogram values
-			histogram.Accumulate();
+			histogram.SortReduceAndAddToHistogram(edepsInTarget);
 		}
 
 		int number_of_values_in_histogram = 0;
@@ -417,8 +402,6 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		cudaFree(inSphereTrackId);
 		cudaFree(randomVals);
 		edepsInTarget.Free();
-		sortedEdeps.Free();
-		reducedEdeps.Free();
 
 		//Initialize the histogram
 		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);

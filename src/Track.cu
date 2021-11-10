@@ -8,6 +8,8 @@
 #include "TMath.h"
 #include <tuple>
 
+//TODO: this is a bad design principle
+//replace this with separate allocation function
 Track::Track(int nVals)
 {
 	cudaMalloc(&x,nVals*sizeof(double));

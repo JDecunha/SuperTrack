@@ -3,6 +3,7 @@
 #include <string>
 #include "CubStorageBuffer.cuh"
 #include "VolumeEdepPair.cuh"
+#include "SuperTrackTypes.cuh"
 
 class Histogram
 {
@@ -10,19 +11,23 @@ class Histogram
 		Histogram(int nbins, float binLower, float binUpper, std::string type);
 
 		void Accumulate();
-		void Allocate();
+		void Allocate(VolumeEdepPair targetEdeps);
 		void Free();
+		void SortReduceAndAddToHistogram(VolumeEdepPair targetEdeps);
 		
 		int _nbins;
 		float _binLower, _binUpper;
 		double *_binEdges;
 		int *_histogramVals, *_histogramValsAccumulated;
 
+		VolumeEdepPair sortedEdeps, reducedEdeps;
+		CubStorageBuffer sortBuffer, reduceBuffer, histogramBuffer;
+		CUBAddOperator reductionOperator;
+
 	private:
 		void GenerateLogHistogram();
 
-		VolumeEdepPair targetEdeps, sortedEdeps, reducedEdeps;
-		CubStorageBuffer sortBuffer, reduceBuffer, histogramBuffer;
+		
 
 		std::string _type;
 };
@@ -32,4 +37,5 @@ class Histogram
 namespace HistogramKernel
 {
 	__global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N);
+	__global__ void SortReduceAndAddToHistogramKernel(CubStorageBuffer sortBuffer, CubStorageBuffer reduceBuffer, CubStorageBuffer histogramBuffer, VolumeEdepPair edepsInTarget, VolumeEdepPair sortedEdeps, VolumeEdepPair reducedEdeps, int nbins,int* histogramVals, double* logBins, CUBAddOperator reductionOperator);
 };
