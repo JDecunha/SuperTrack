@@ -1,6 +1,7 @@
 #include "utils.hh"
 #include "TMath.h"
 
+
 void BinLogX(TH1F* h)
 {
 	///Very useful function from the ROOT forums

@@ -2,3 +2,4 @@ build/
 misc/
 Profiling_sessions/
 UsefulCommands.txt
+*.sublime*

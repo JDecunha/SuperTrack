@@ -2,6 +2,7 @@
 
 #include "CubStorageBuffer.cuh"
 #include "SuperTrackTypes.cuh"
+#include "VolumeEdepPair.cuh"
 
 class CubStorageBuffer
 {

@@ -4,6 +4,7 @@
 #include "Track.cuh"
 #include "CubStorageBuffer.cuh"
 #include "Histogram.cuh"
+#include "VolumeEdepPair.cuh"
 //ROOT
 #include "TROOT.h"
 #include "TFile.h"
@@ -80,7 +81,7 @@ __global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals
 	double x_shifted; double y_shifted; int outputIndex;
 
 	//Determine index and strid
-  int index = threadIdx.x + blockIdx.x * blockDim.x;
+   int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
 
 	//Counters for shared memory atomics
@@ -253,7 +254,7 @@ __global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N)
 }
 
 //TODO:Change this back to Malloc after testing
-VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
+/*VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
 {
 	VolumeEdepPair toAllocate;
 	cudaMalloc(&(toAllocate.volume),numElements*sizeof(uint64_t));
@@ -261,7 +262,7 @@ VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
 	cudaMallocManaged(&(toAllocate.numElements),sizeof(int));
 
 	return toAllocate;
-}
+}*/
 
 //Todo: create function for freeing GPUVolumeEdepPair
 
@@ -353,11 +354,13 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 
 		//Make histogram
 		Histogram histogram = Histogram(200,-1,2,"log");
+		histogram.Allocate();
 		
 		//Allocate GPU only memory for the volume:edep paired list
-		VolumeEdepPair edepsInTarget = AllocateGPUVolumeEdepPair(nVals);
-		VolumeEdepPair sortedEdeps = AllocateGPUVolumeEdepPair(nVals); 
-		VolumeEdepPair reducedEdeps = AllocateGPUVolumeEdepPair(nVals); 
+		VolumeEdepPair edepsInTarget, sortedEdeps, reducedEdeps;
+		edepsInTarget.Allocate(nVals);
+		sortedEdeps.Allocate(nVals);
+		reducedEdeps.Allocate(nVals);
 
 		int *NumInBox; 
 		cudaMallocManaged(&NumInBox,sizeof(int)); 
@@ -408,13 +411,18 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		std::cout << number_of_values_in_histogram << std::endl;
 		//TODO: close my file at some point */
 	  
-	  //Initialize the histogram
-		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
-		return lineal_histogram;
+
 
 		//TODO: Free all the memory I allocated too
 		cudaFree(inSphereTrackId);
 		cudaFree(randomVals);
+		edepsInTarget.Free();
+		sortedEdeps.Free();
+		reducedEdeps.Free();
+
+		//Initialize the histogram
+		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
+		return lineal_histogram;
 
 
 	};

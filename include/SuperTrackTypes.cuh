@@ -32,13 +32,6 @@ struct SphericalGeometry
 
 //Track-related
 
-struct VolumeEdepPair
-{
-	uint64_t* volume;
-	double* edep;
-	int* numElements; //this is type pointer but it should only point to a single value
-};
-
 //Miscellaneous
 
 struct CUBAddOperator

@@ -1,13 +1,17 @@
 #pragma once
 
 #include <string>
+#include "CubStorageBuffer.cuh"
+#include "VolumeEdepPair.cuh"
 
 class Histogram
 {
 	public:
 		Histogram(int nbins, float binLower, float binUpper, std::string type);
-		~Histogram();
+
 		void Accumulate();
+		void Allocate();
+		void Free();
 		
 		int _nbins;
 		float _binLower, _binUpper;
@@ -16,6 +20,11 @@ class Histogram
 
 	private:
 		void GenerateLogHistogram();
+
+		VolumeEdepPair targetEdeps, sortedEdeps, reducedEdeps;
+		CubStorageBuffer sortBuffer, reduceBuffer, histogramBuffer;
+
+		std::string _type;
 };
 
 //CUDA Limitation: Kernels cannot belong to classes

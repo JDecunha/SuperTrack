@@ -10,8 +10,12 @@ Histogram::Histogram(int nbins, float binLower, float binUpper,std::string type=
 	_nbins = nbins;
 	_binLower = binLower;
 	_binUpper = binUpper;
+	_type = type;
+}
 
-	if (type == "log")
+void Histogram::Allocate()
+{
+	if (_type == "log")
 	{
 		GenerateLogHistogram();
 	}
@@ -21,12 +25,13 @@ Histogram::Histogram(int nbins, float binLower, float binUpper,std::string type=
 	}
 }
 
-Histogram::~Histogram()
+void Histogram::Free()
 {
 	cudaFree(_binEdges);
 	cudaFree(_histogramVals);
 	cudaFree(_histogramValsAccumulated);
 }
+
 
 void Histogram::GenerateLogHistogram()
 {
