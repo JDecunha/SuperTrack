@@ -7,10 +7,9 @@ CubStorageBuffer::CubStorageBuffer()
 	size = 0;
 }
 
-CubStorageBuffer::~CubStorageBuffer()
+void CubStorageBuffer::Free()
 {
-	//cudaFree(&storage);
-	//cudaFree(&size);
+	cudaFree(storage);
 }
 
 CubStorageBuffer CubStorageBuffer::AllocateCubSortBuffer(VolumeEdepPair edepPairList)

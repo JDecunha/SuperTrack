@@ -59,6 +59,13 @@ void Histogram::Free()
 	cudaFree(_binEdges);
 	cudaFree(_histogramVals);
 	cudaFree(_histogramValsAccumulated);
+
+	sortedEdeps.Free();
+	reducedEdeps.Free();
+
+	sortBuffer.Free();
+	reduceBuffer.Free();
+	histogramBuffer.Free();
 }
 
 void Histogram::Accumulate()

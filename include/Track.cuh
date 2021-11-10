@@ -7,9 +7,11 @@ class Track
 { 
 	public:
 
-		Track(int nVals);
-		~Track();
-		static void LoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input, Track *deviceTrack);
+		Track();
+		void Free();
+		void AllocateAndLoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input);
+		void AllocateEmptyTrack(int nVals);
+
 
 		double* x;
 		double* y;

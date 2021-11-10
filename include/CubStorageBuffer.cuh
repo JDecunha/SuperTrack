@@ -8,7 +8,7 @@ class CubStorageBuffer
 {
 	public:
 		CubStorageBuffer();
-		~CubStorageBuffer();
+		void Free();
 
 		static CubStorageBuffer AllocateCubSortBuffer(VolumeEdepPair edepPairList);
 		static CubStorageBuffer AllocateCubReduceBuffer(VolumeEdepPair edepPairList);

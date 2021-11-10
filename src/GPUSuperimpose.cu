@@ -5,6 +5,7 @@
 #include "CubStorageBuffer.cuh"
 #include "Histogram.cuh"
 #include "VolumeEdepPair.cuh"
+//#include "SphericalGeometryWithBounding.cuh"
 //ROOT
 #include "TROOT.h"
 #include "TFile.h"
@@ -47,26 +48,6 @@ void GenerateRandomXYShift(const std::tuple<Int_t,Int_t,Int_t,TString> &input, f
 	curandGenerateUniform(randGenerator,*randomVals,2*nSamples);
 	curandDestroyGenerator(randGenerator);
 	cudaDeviceSynchronize();
-}
-
-void GenerateLogHistogram(double **logBins, int **histogramVals, int **histogramValsAccumulated, int nbins, float binLowerMagnitude, float binUpperMagnitude)
-{
-	//Get the device Id for active GPU
-	int deviceId;
-	cudaGetDevice(&deviceId);   
-
-	//Fill the log bins and send to the device
-	cudaMallocManaged(logBins, (nbins+1)*sizeof(double));
-	LogSpace(binLowerMagnitude,binUpperMagnitude,nbins,*logBins);
-	cudaMemPrefetchAsync(*logBins,(nbins+1)*sizeof(double),deviceId);
-
-	//TODO: Change to unmanaged memory later
-	cudaMallocManaged(histogramVals,nbins*sizeof(int));
-	cudaMallocManaged(histogramValsAccumulated,nbins*sizeof(int));
-
-	//Set arrays to zero
-	cudaMemset(*histogramVals,0,nbins*sizeof(int));
-	cudaMemset(*histogramValsAccumulated,0,nbins*sizeof(int));
 }
 
 __global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals, Track inputTrack, Track outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
@@ -241,41 +222,6 @@ __global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track inputTrack,
 	}
 }
 
-__global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N)
-{
-	//Determine index and stride
- 	int index = threadIdx.x + blockIdx.x * blockDim.x;
-	int stride = blockDim.x * gridDim.x;
-
-	for (int i = index; i < N; i+=stride)
-	{
-		accumulated[i] = accumulated[i]+temp[i];
-	}
-}
-
-//TODO:Change this back to Malloc after testing
-/*VolumeEdepPair AllocateGPUVolumeEdepPair(uint64_t numElements)
-{
-	VolumeEdepPair toAllocate;
-	cudaMalloc(&(toAllocate.volume),numElements*sizeof(uint64_t));
-	cudaMalloc(&(toAllocate.edep),numElements*sizeof(double));
-	cudaMallocManaged(&(toAllocate.numElements),sizeof(int));
-
-	return toAllocate;
-}*/
-
-//Todo: create function for freeing GPUVolumeEdepPair
-
-__global__ void SortReduceHistogram(CubStorageBuffer sortBuffer, CubStorageBuffer reduceBuffer, CubStorageBuffer histogramBuffer, VolumeEdepPair edepsInTarget, VolumeEdepPair sortedEdeps, VolumeEdepPair reducedEdeps, int nbins,int* histogramVals, double* logBins, CUBAddOperator reductionOperator)
-{
-	//Sort the edep volume pairs
-	cub::DeviceRadixSort::SortPairs(sortBuffer.storage,sortBuffer.size,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
-	// reduce the energy depositions
-	cub::DeviceReduce::ReduceByKey(reduceBuffer.storage,reduceBuffer.size, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
-	//Create the histogram
-	cub::DeviceHistogram::HistogramRange(histogramBuffer.storage,histogramBuffer.size,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
-}
-
 __global__ void ZeroInt(int* toZero)
 {
 	*toZero = 0;
@@ -336,11 +282,12 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 		int nVals = std::get<1>(input) - std::get<0>(input) + 1; //+1 because number of values includes first and last value
 
 		//Define Track
-		Track deviceTrack = Track(nVals); 
-		Track::LoadTrack(input, &deviceTrack); //load track from disk and copy to GPU
+		Track deviceTrack;
+		deviceTrack.AllocateAndLoadTrack(input); //load track from disk and copy to GPU
 
 		//Allocate memory for the tracks found to be within the box
-		Track randomlyShiftedTrack = Track(nVals);
+		Track randomlyShiftedTrack;
+		randomlyShiftedTrack.AllocateEmptyTrack(nVals);
 
 		//Allocate memory to store the TrackIDs of the points within spheres
 		int *inSphereTrackId;
@@ -398,10 +345,16 @@ TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t 
 	  
 
 
-		//TODO: Free all the memory I allocated too
+		//Free directly allocated memory
 		cudaFree(inSphereTrackId);
 		cudaFree(randomVals);
+		cudaFree(NumInBox);
+
+		//Free my classes
 		edepsInTarget.Free();
+		deviceTrack.Free();
+		randomlyShiftedTrack.Free();
+		histogram.Free();
 
 		//Initialize the histogram
 		TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
