@@ -2,6 +2,7 @@
 #include "CPUSuperimpose.hh"
 #include "GPUSuperimpose.cuh"
 #include "utils.hh"
+#include "ThreadAllocator.hh"
 //ROOT
 #include "TROOT.h"
 #include "TFile.h"
@@ -46,9 +47,16 @@ void GPU_lineal_test()
 	int end_time = time(0); cout << "ROOT Program Ending. Seconds elapsed: " << (end_time-start_time) << endl;	
 }
 
+void File_Allocator_test()
+{
+	std::string folderPath = "/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/"; 
+	ThreadAllocator folderAllocator = ThreadAllocator(folderPath,2);
+	auto A = folderAllocator.ReturnThreadAllocations();
+}
+
 void SuperTrack()
 {
-	GPU_lineal_test();
+	File_Allocator_test();
 }
 
 # ifndef __CINT__
