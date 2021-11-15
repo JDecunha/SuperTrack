@@ -50,8 +50,10 @@ void GPU_lineal_test()
 void File_Allocator_test()
 {
 	std::string folderPath = "/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/"; 
-	ThreadAllocator folderAllocator = ThreadAllocator(folderPath,2);
+	ThreadAllocator folderAllocator = ThreadAllocator(folderPath,4,100);
 	auto A = folderAllocator.ReturnThreadAllocations();
+
+	score_lineal_GPU_New(A,5e3,5e3);
 }
 
 void SuperTrack()

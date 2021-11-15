@@ -11,106 +11,88 @@
 #include "TTreeReader.h"
 #include "TMath.h"
 //STD library
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 
 
-ThreadAllocator::ThreadAllocator(const std::string& folderPath, const int& numThreads, const int& lowerFileLimit, const int& upperFileLimit, const Long_t& randomSeed)
+ThreadAllocator::ThreadAllocator(const std::string& folderPath, const int& numThreads, const int& nOversamples, const int& lowerFileLimit, const int& upperFileLimit, const Long_t& randomSeed)
 {
 	_folderPath = folderPath;
 	_numThreads = numThreads;
 	_lowerFileLimit = lowerFileLimit;
 	_upperFileLimit = upperFileLimit;
 	_randomSeed = randomSeed;
+	_nOversamples = nOversamples;
 }
 
 std::vector<ThreadAllocation> ThreadAllocator::ReturnThreadAllocations()
 {
 	//Part 1: determine number of .root files and save their paths
 	std::vector<std::string> filePaths;
-	int numFiles = 0;
 
 	for(const auto &file : std::filesystem::directory_iterator(_folderPath))
-	{ 
 		if(file.path().extension() == ".root")
-		{
 			filePaths.push_back(file.path());
-		}
-	}
+		
+	//Sort the paths alphabetically
+	std::sort(filePaths.begin(),filePaths.end());
 	
 	//Part 2: parse the lower and upper file limit arguments
-	if (_lowerFileLimit == 0 && _upperFileLimit == 0) //default case, analyze whole folder
+	if (_lowerFileLimit == -1 && _upperFileLimit == -1) //default case, analyze whole folder
 	{ 
-		_lowerFileLimit = 1; //Numbering starts from 1 for this
+		_lowerFileLimit = 1; //Numbering starts from 1
 		_upperFileLimit = filePaths.size(); 
 	}
-	else if (_upperFileLimit != 0 && _upperFileLimit < _lowerFileLimit) //This case is invalid
+	else if (_upperFileLimit < _lowerFileLimit) //This case is invalid
 	{
 		std::cout << "Lower file limit greater than upper file limit. Aborting." << std::endl;
 		abort();
 	}
 
-	//Part 3: for the requested files (within the limits)
-	//make a task for every Track in the file
+	//Part 3: Mask a task for every track in the requested files
 	std::vector<ThreadTask> tasks;
-	int numTracks;
-	int numTracksTotal = 0;
 
-	//Make a task out of every track in the requested files
 	for (int i = _lowerFileLimit; i <= _upperFileLimit; i++)
-	{
-		numTracks = MakeTasks((TString)(filePaths[i-1]), tasks); //Get the tasks from the current file
-		numTracksTotal += numTracks;
-	}
+		//i-1, because _lowerFileLimit numbering starts at 1
+		MakeTasks((TString)(filePaths[i-1]), tasks); //Get the tasks from the current file
+	
 
-	//Abort in this case
-	if (numTracksTotal < _numThreads)
+	//Modify the number of threads allocated to if there are fewer tracks than threads
+	if (tasks.size() < _numThreads)
 	{
 		std::cout << "There are fewer tracks to analyze than the number of requested threads." << std::endl;
-		std::cout << "Lowering number of active threads to: " << numTracksTotal << " to accomodate." << std::endl;
-		_numThreads = numTracksTotal;
+		std::cout << "Lowering number of active threads to: " << tasks.size() << " to accomodate." << std::endl;
+		_numThreads = tasks.size();
 	}
 
-	//Part 4: Create out ThreadAllocations (which are a collection of tasks)
+	//Part 4: Create ThreadAllocations (which are a collection of tasks)
 	//for every thread. Depending on # of tracks and threads
-
-	std::vector<ThreadAllocation> threadAllocations; //Create the output thread allocations
-	int numTracksPerThread = 0; //this is how many tracks we allocate per thread
-	int numTracksPerThreadRemainder = 0; //and for remainder# of threads we allocate ONE more track
-	int currentTrack = 0;
+	std::vector<ThreadAllocation> threadAllocations; //the output thread allocations
+	int numTracksPerThread = tasks.size()/_numThreads; //this is how many tracks we allocate per thread
+	int numTracksPerThreadRemainder = tasks.size() % _numThreads;  //and for remainder# of threads we allocate an additional track
+	int currentTrack = 0; //this is used in the loop below
 
 	// *** Loop logic explanation: ***
-	//Imagine 10 cores analyzing 15 files
+	//Imagine 15 cores analyzing 20 tracks
 	//the numTracksPerThread is 1, remainder 5
 	//First 5 cores analyze numTracksPerThread+1 tracks, 2 tracks per thread
-	//Last 5 cores just analyze numTracksPerThread tracks, 1 track per thread
-	//Works out to 15 tracks
+	//Last 10 cores just analyze numTracksPerThread tracks, 1 track per thread
+	//Works out to 20 tracks
 
-
-	//Get the quotient and remainder
-	numTracksPerThread = numTracksTotal/_numThreads;
-	numTracksPerThreadRemainder = numTracksTotal % _numThreads; //Remainder exists if numTracks not divisible by numCores
-
-	for (int i = 0; i < _numThreads; i++) //loop over each requested thread
+	for (int i = 0; i < _numThreads; i++) //loop for each thread
 	{
-		int j = currentTrack;
-		ThreadAllocation allocation = ThreadAllocation(_randomSeed,i); //create the allocation for a thread
+		ThreadAllocation allocation = ThreadAllocation(_randomSeed,i,_nOversamples); //create the allocation for a thread
 
-		if (i < numTracksPerThreadRemainder) //add an extra track for these threads
+		int numTasksToCreate = numTracksPerThread;
+
+		if (i < numTracksPerThreadRemainder) //add an extra task/track for these threads
+			numTasksToCreate += 1;
+
+		for (int j = 0; j < numTasksToCreate; j++) //create tasks and push them into the ThreadAllocation 
 		{
-			while (currentTrack < (j+numTracksPerThread+1)) //Loop over and add tasks to the allocation
-			{
-				allocation.AddTask(tasks[currentTrack]);
-				currentTrack += 1;
-			}
-		}
-		else //don't add an extra track for these
-		{
-			while (currentTrack < (j+numTracksPerThread)) //Loop over and add tasks to the allocation
-			{
-				allocation.AddTask(tasks[currentTrack]);
-				currentTrack += 1;
-			}
+			allocation.AddTask(tasks[currentTrack]);
+			currentTrack += 1;
 		}
 
 		//add the allocation for this thread to the global list

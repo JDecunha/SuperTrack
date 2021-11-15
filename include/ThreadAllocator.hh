@@ -17,7 +17,7 @@
 class ThreadAllocator
 {
 	public:
-		ThreadAllocator(const std::string &folderPath, const int &numThreads, const int &lowerFileLimit = 0, const int &upperFileLimit = 0, const Long_t& randomSeed = time(NULL));
+		ThreadAllocator(const std::string& folderPath, const int& numThreads, const int& nOversamples = 1, const int& lowerFileLimit = -1, const int& upperFileLimit = -1, const Long_t& randomSeed = time(NULL));
 		std::vector<ThreadAllocation> ReturnThreadAllocations();
 
 	private:
@@ -26,6 +26,7 @@ class ThreadAllocator
 
 		std::string _folderPath;
 		int _numThreads;
+		int _nOversamples;
 		int _lowerFileLimit;
 		int _upperFileLimit;
 		long _randomSeed;

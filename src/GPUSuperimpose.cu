@@ -5,6 +5,7 @@
 #include "CubStorageBuffer.cuh"
 #include "Histogram.cuh"
 #include "VolumeEdepPair.cuh"
+#include "ThreadAllocation.hh"
 //#include "SphericalGeometryWithBounding.cuh"
 //ROOT
 #include "TROOT.h"
@@ -225,6 +226,121 @@ __global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track inputTrack,
 __global__ void ZeroInt(int* toZero)
 {
 	*toZero = 0;
+}
+
+TH1F score_lineal_GPU_New(std::vector<ThreadAllocation> threadAllocations, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter)
+{
+	//open the file and retrieve the trees
+	TFile f = TFile((threadAllocations[0].GetTasks())[0].GetFilename());
+
+	//Pull my geometry information to get passed to each of my threads
+	TNamed* voxelSideLength;
+	f.GetObject("Voxel side length [mm]",voxelSideLength);
+	float scoring_square_half_length = atof(voxelSideLength->GetTitle())*1e6;
+	SphericalGeometry sphericalGeometry = SphericalGeometry(scoring_square_half_length,scoring_sphere_diameter);
+
+	//We are done reading the Tree single threaded. Close it.
+	f.Close();
+
+	auto workItem = [=](ThreadAllocation threadInput) //the = sign captures everything in the enclosing function by value. Meaning it makes a process local copy.
+	{
+		std::vector<ThreadTask> tasks = threadInput.GetTasks();
+
+		for (ThreadTask task : tasks) //loop over every track requested
+		{
+			int nVals = (task.GetExitPoint() - task.GetEntryPoint()) + 1; //+1 because number of values includes first and last value
+
+			std::tuple<Int_t,Int_t,Int_t,TString> input = std::make_tuple(task.GetEntryPoint(),task.GetExitPoint(),threadInput.GetRandomSeed(),task.GetFilename());
+
+			//Define Track
+			Track deviceTrack;
+			deviceTrack.AllocateAndLoadTrack(input); //load track from disk and copy to GPU
+
+			//Allocate memory for the tracks found to be within the box
+			Track randomlyShiftedTrack;
+			randomlyShiftedTrack.AllocateEmptyTrack(nVals);
+
+			//Allocate memory to store the TrackIDs of the points within spheres
+			int *inSphereTrackId;
+			cudaMalloc(&inSphereTrackId,nVals*sizeof(int));
+			
+			//Allocate GPU only memory for random numbers
+			float *randomVals; 
+			GenerateRandomXYShift(input, &randomVals, threadInput.GetNOversamples(), threadInput.GetRandomSeed()); //Allocate and fill with random numbers
+
+			//Allocate GPU only memory for the volume:edep paired list
+			VolumeEdepPair edepsInTarget;
+			edepsInTarget.Allocate(nVals);
+
+			//Make histogram
+			Histogram histogram = Histogram(200,-1,2,"log");
+			histogram.Allocate(edepsInTarget);
+			
+			int *NumInBox; 
+			cudaMallocManaged(&NumInBox,sizeof(int)); 
+
+			//Configure cuda kernel launches
+			/*int blockSize;
+			int minGridSize;
+			int gridSize;
+			cudaOccupancyMaxPotentialBlockSize(&minGridSize,&blockSize,ScoreTrackInSphere,0,0);
+			gridSize = (nVals + blockSize - 1)/blockSize;
+			std::cout << gridSize << " " << blockSize << std::endl;*/
+
+			for (int j = 0; j < threadInput.GetNOversamples(); j++)
+			{
+				//New track. Zero values
+				ZeroInt<<<1,1>>>(NumInBox);
+				ZeroInt<<<1,1>>>(edepsInTarget.numElements);
+
+				//Filter and score the tracks
+				FilterInScoringBox<<<256,256>>>(sphericalGeometry,randomVals,deviceTrack,randomlyShiftedTrack,nVals,NumInBox,j);	
+				FilterTrackInSphere<<<256,256>>>(sphericalGeometry,randomlyShiftedTrack,NumInBox,edepsInTarget.numElements,inSphereTrackId); 
+				ScoreTrackInSphere<<<256,256>>>(sphericalGeometry,randomlyShiftedTrack,edepsInTarget.numElements,inSphereTrackId,edepsInTarget); 
+
+				//Sort the edeps by volumeID, reduce (accumulate), and then place into histograms
+				histogram.SortReduceAndAddToHistogram(edepsInTarget);
+			}
+
+			int number_of_values_in_histogram = 0;
+			cudaDeviceSynchronize();
+			//Read out histogram
+			for (int i = 0; i < histogram._nbins; i++)
+			{
+				number_of_values_in_histogram += histogram._histogramValsAccumulated[i];
+				std::cout << "Bin: " << histogram._binEdges[i] << " Counts: " << histogram._histogramValsAccumulated[i] << std::endl;
+			}
+
+			std::cout << number_of_values_in_histogram << std::endl;
+
+			//Free directly allocated memory
+			cudaFree(inSphereTrackId);
+			cudaFree(randomVals);
+			cudaFree(NumInBox);
+
+			//Free my classes
+			edepsInTarget.Free();
+			deviceTrack.Free();
+			randomlyShiftedTrack.Free();
+			histogram.Free();
+
+			//Initialize the histogram
+			TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
+			return lineal_histogram;
+		}
+
+
+	};
+
+	// Create the pool of workers
+	ROOT::TProcessExecutor workers(threadAllocations.size());
+	//Process the jobs and get a vector of the output
+	std::vector<TH1F> process_output = workers.Map(workItem, threadAllocations);
+
+	TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
+
+	return lineal_histogram;
+
 }
 
 TH1F score_lineal_GPU(TString filepath, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, Int_t nthreads, Int_t nSamples = 20000, Long_t random_seed = time(NULL))
