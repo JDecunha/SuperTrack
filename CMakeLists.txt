@@ -12,6 +12,14 @@ find_package(ROOT 6.25 CONFIG REQUIRED)
 include("${ROOT_USE_FILE}") #include the ROOT CMakelists which defines $ROOT_LIBRARIES
 
 ###
+### Add the .ini reader header only library
+###
+
+#interface because header only
+add_library(inih INTERFACE)
+target_include_directories(inih INTERFACE ${CMAKE_SOURCE_DIR}/extern/inih)
+
+###
 ### Configure executable and in-project libraries
 ###
 
@@ -26,6 +34,6 @@ add_executable(SuperTrack SuperTrack.cu)
 	set_target_properties(src PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 #Now link my libraries
-	target_link_libraries(SuperTrack PRIVATE src ${ROOT_LIBRARIES} -lcurand)
+	target_link_libraries(SuperTrack PRIVATE src ${ROOT_LIBRARIES} inih -lcurand)
 
 

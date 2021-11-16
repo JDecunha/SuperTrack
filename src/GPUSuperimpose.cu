@@ -246,6 +246,10 @@ TH1F score_lineal_GPU_New(std::vector<ThreadAllocation> threadAllocations, float
 	{
 		std::vector<ThreadTask> tasks = threadInput.GetTasks();
 
+		//New design idea: Loop over an iterator i
+		//Then each of my functions can take (ThreadAllocation allocation, int taskNumber)
+		//That's how I'll pass all the information I need to these classes
+
 		for (ThreadTask task : tasks) //loop over every track requested
 		{
 			int nVals = (task.GetExitPoint() - task.GetEntryPoint()) + 1; //+1 because number of values includes first and last value

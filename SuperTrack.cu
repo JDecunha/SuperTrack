@@ -3,19 +3,14 @@
 #include "GPUSuperimpose.cuh"
 #include "utils.hh"
 #include "ThreadAllocator.hh"
+//inih
+#include "INIReader.h"
 //ROOT
 #include "TROOT.h"
 #include "TFile.h"
 #include "TCanvas.h"
 #include "THStack.h"
 #include "TPad.h"
-
-
-//SMatrix and SVector are the fastest
-//ways to hold vectors and matrices in ROOT
-typedef ROOT::Math::SVector<Double_t,3> SVector3;
-#define VERBOSE 0
-#define VERY_VERBOSE 1
 
 using namespace std;
 
@@ -58,7 +53,12 @@ void File_Allocator_test()
 
 void SuperTrack()
 {
-	File_Allocator_test();
+	INIReader reader("../macros/test.ini");
+
+	if (reader.ParseError() < 0) 
+	    std::cout << "Can't load 'test.ini'\n";
+	
+	cout << reader.Get("user", "name", "UNKNOWN") << endl;
 }
 
 # ifndef __CINT__
