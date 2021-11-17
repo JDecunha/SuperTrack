@@ -19,18 +19,20 @@ class SimulationMethod
 		
 		virtual void ParseInput() = 0;
 		virtual void AllocateTrackProcess(Track track, ThreadTask task) = 0; //This will handle all the memory allocations
-		virtual VolumeEdepPair ProcessTrack(Track track) = 0;
+		virtual void ProcessTrack(Track track, VolumeEdepPair& edepsInTarget) = 0;
 		virtual void FreeTrackProcess() = 0;
 		virtual void Free() = 0;
 
 	protected:
+		//Static helper functions for derived SimulationMethods
+		static void GenerateRandomXYShift(const ThreadTask &task, float** randomVals);
+
 		INIReader _macroReader;
 };
 
 namespace SimulationMethodKernel
 {
 	__global__ void ZeroInt(int* toZero);
-	void GenerateRandomXYShift(const std::tuple<Int_t,Int_t,Int_t,TString> &input, float **randomVals, const int &nSamples, const long &random_seed);
 
 };
 

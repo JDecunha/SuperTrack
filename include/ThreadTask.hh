@@ -8,12 +8,12 @@ class ThreadTask
 	public:
 		ThreadTask(const TString& fileName,const Long_t& entryPoint,const Long_t& exitPoint);
 
-		TString GetFilename();
-		Long_t GetEntryPoint();
-		Long_t GetExitPoint();
-		Long_t GetRandomSeed();
-		Int_t GetThreadID();
-		Int_t GetNOversamples();
+		TString GetFilename() const;
+		Long_t GetEntryPoint() const;
+		Long_t GetExitPoint() const;
+		Long_t GetRandomSeed() const;
+		Int_t GetThreadID() const;
+		Int_t GetNOversamples() const;
 
 	private:
 		friend ThreadAllocation;

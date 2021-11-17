@@ -45,14 +45,14 @@ void GPU_lineal_test()
 
 void File_Allocator_test()
 {
+	INIReader reader = INIReader("../macros/test.ini");
+	
 	std::string folderPath = "/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/"; 
 	ThreadAllocator folderAllocator = ThreadAllocator(folderPath,4,100,1,2);
 	std::vector<ThreadAllocation> ThreadAllocations;	
 	folderAllocator.ReturnThreadAllocations(ThreadAllocations);
 
-	INIReader reader = INIReader("../macros/test.ini");
-
-	VoxelConstrainedSphereMethod method = VoxelConstrainedSphereMethod(reader);
+	SimulationMethod* method = new VoxelConstrainedSphereMethod(reader);
 
 	//score_lineal_GPU_New(ThreadAllocations,5e3,5e3);
 }

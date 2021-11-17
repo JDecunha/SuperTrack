@@ -13,16 +13,23 @@ class VoxelConstrainedSphereMethod : public SimulationMethod
 
 		void ParseInput() override;
 		void AllocateTrackProcess(Track track, ThreadTask task) override; //This will handle all the memory allocations
-		VolumeEdepPair ProcessTrack(Track track) override;
+		void ProcessTrack(Track track, VolumeEdepPair& edepsInTarget) override;
 		void FreeTrackProcess() override;
 		void Free() override;
 
 	private:
-		Track _randomlyShiftedTrack;
-		//SphericalGeometry _sphericalGeometry;
-		int* _numInBox;
-		int* _inSphereTrackId;
+
+		//Takes the information from the .ini reader and make a geometry
+		SphericalGeometry _sphericalGeometry;
+
+		//These values are allocated before a track is processed and used when superimposing the Track
+		int _nSteps;
+		int _oversampleIterationNumber;
 		float* _randomVals;
+		Track _randomlyShiftedTrack;
+		int* _numInVoxel;
+		int* _inSphereTrackId;
+		
 
 };
 

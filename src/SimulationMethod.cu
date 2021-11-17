@@ -12,6 +12,20 @@ SimulationMethod::SimulationMethod(const INIReader& macroReader)
 	_macroReader = macroReader;
 }
 
+void SimulationMethod::GenerateRandomXYShift(const ThreadTask &task, float** randomVals)
+{
+	cudaMalloc(randomVals,2*sizeof(float)*task.GetNOversamples()); 
+	
+	//Random number generation on GPU
+	curandGenerator_t randGenerator;
+	curandCreateGenerator(&randGenerator,CURAND_RNG_PSEUDO_DEFAULT);
+	//TODO: Change this to collate the numbers rather than add the threadID to randomSeed
+	curandSetPseudoRandomGeneratorSeed(randGenerator,task.GetRandomSeed()+task.GetThreadID());
+	curandGenerateUniform(randGenerator,*randomVals,2*task.GetNOversamples());
+	curandDestroyGenerator(randGenerator);
+	cudaDeviceSynchronize();
+}
+
 //
 // Kernel definitions
 //
@@ -21,15 +35,4 @@ __global__ void SimulationMethodKernel::ZeroInt(int* toZero)
 	*toZero = 0;
 }
 
-void SimulationMethodKernel::GenerateRandomXYShift(const std::tuple<Int_t,Int_t,Int_t,TString> &input, float **randomVals, const int &nSamples, const long &random_seed)
-{
-	cudaMalloc(randomVals,2*sizeof(float)*nSamples); 
-	
-	//Random number generation on GPU
-	curandGenerator_t randGenerator;
-	curandCreateGenerator(&randGenerator,CURAND_RNG_PSEUDO_DEFAULT); //consider changing this to Mersenne Twister later
-	curandSetPseudoRandomGeneratorSeed(randGenerator,random_seed+std::get<2>(input));
-	curandGenerateUniform(randGenerator,*randomVals,2*nSamples);
-	curandDestroyGenerator(randGenerator);
-	cudaDeviceSynchronize();
-}
+
