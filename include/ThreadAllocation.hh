@@ -8,12 +8,12 @@
 class ThreadAllocation
 {
 	public:
-		ThreadAllocation(const Int_t& threadID, const Int_t& randomSeed, const Int_t& nOversamples);
+		ThreadAllocation(const Int_t& threadID, const Long_t& randomSeed, const Int_t& nOversamples);
 
-		void AddTask(ThreadTask task);
+		void AddTask(ThreadTask& task);
 		std::vector<ThreadTask> GetTasks();
 
-		Int_t GetRandomSeed();
+		Long_t GetRandomSeed();
 		Int_t GetThreadID();
 		Int_t GetNOversamples();
 
@@ -21,8 +21,7 @@ class ThreadAllocation
 		std::vector<ThreadTask> _tasks;
 		
 		Int_t _threadID;
-		Int_t _randomSeed;
-		Int_t _nTasks;
+		Long_t _randomSeed;
 		Int_t _nOversamples;
 };
 

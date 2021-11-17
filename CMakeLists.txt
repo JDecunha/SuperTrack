@@ -31,6 +31,7 @@ add_executable(SuperTrack SuperTrack.cu)
 
 	#public below means the main SuperTrack.cu inherits the include directories of src
 	target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include)
+	target_link_libraries(src PUBLIC inih)
 	set_target_properties(src PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 #Now link my libraries

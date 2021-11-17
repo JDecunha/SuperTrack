@@ -3,6 +3,7 @@
 #include "GPUSuperimpose.cuh"
 #include "utils.hh"
 #include "ThreadAllocator.hh"
+#include "VoxelConstrainedSphereMethod.hh"
 //inih
 #include "INIReader.h"
 //ROOT
@@ -45,20 +46,27 @@ void GPU_lineal_test()
 void File_Allocator_test()
 {
 	std::string folderPath = "/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/"; 
-	ThreadAllocator folderAllocator = ThreadAllocator(folderPath,4,100);
-	auto A = folderAllocator.ReturnThreadAllocations();
+	ThreadAllocator folderAllocator = ThreadAllocator(folderPath,4,100,1,2);
+	std::vector<ThreadAllocation> ThreadAllocations;	
+	folderAllocator.ReturnThreadAllocations(ThreadAllocations);
 
-	score_lineal_GPU_New(A,5e3,5e3);
+	INIReader reader = INIReader("../macros/test.ini");
+
+	VoxelConstrainedSphereMethod method = VoxelConstrainedSphereMethod(reader);
+
+	//score_lineal_GPU_New(ThreadAllocations,5e3,5e3);
 }
 
 void SuperTrack()
 {
-	INIReader reader("../macros/test.ini");
+	/*INIReader reader("../macros/test.ini");
 
 	if (reader.ParseError() < 0) 
 	    std::cout << "Can't load 'test.ini'\n";
 	
-	cout << reader.Get("user", "name", "UNKNOWN") << endl;
+	cout << reader.Get("user", "name", "UNKNOWN") << endl;*/
+
+	File_Allocator_test();
 }
 
 # ifndef __CINT__

@@ -26,9 +26,9 @@ ThreadAllocator::ThreadAllocator(const std::string& folderPath, const int& numTh
 	_nOversamples = nOversamples;
 }
 
-std::vector<ThreadAllocation> ThreadAllocator::ReturnThreadAllocations()
+void ThreadAllocator::ReturnThreadAllocations(std::vector<ThreadAllocation>& threadAllocations)
 {
-	//Part 1: determine number of .root files and save their paths
+	//Part 1: Save paths of .root files in the directory
 	std::vector<std::string> filePaths;
 
 	for(const auto &file : std::filesystem::directory_iterator(_folderPath))
@@ -39,16 +39,7 @@ std::vector<ThreadAllocation> ThreadAllocator::ReturnThreadAllocations()
 	std::sort(filePaths.begin(),filePaths.end());
 	
 	//Part 2: parse the lower and upper file limit arguments
-	if (_lowerFileLimit == -1 && _upperFileLimit == -1) //default case, analyze whole folder
-	{ 
-		_lowerFileLimit = 1; //Numbering starts from 1
-		_upperFileLimit = filePaths.size(); 
-	}
-	else if (_upperFileLimit < _lowerFileLimit) //This case is invalid
-	{
-		std::cout << "Lower file limit greater than upper file limit. Aborting." << std::endl;
-		abort();
-	}
+	ParseFileLimits(filePaths.size());
 
 	//Part 3: Mask a task for every track in the requested files
 	std::vector<ThreadTask> tasks;
@@ -68,7 +59,6 @@ std::vector<ThreadAllocation> ThreadAllocator::ReturnThreadAllocations()
 
 	//Part 4: Create ThreadAllocations (which are a collection of tasks)
 	//for every thread. Depending on # of tracks and threads
-	std::vector<ThreadAllocation> threadAllocations; //the output thread allocations
 	int numTracksPerThread = tasks.size()/_numThreads; //this is how many tracks we allocate per thread
 	int numTracksPerThreadRemainder = tasks.size() % _numThreads;  //and for remainder# of threads we allocate an additional track
 	int currentTrack = 0; //this is used in the loop below
@@ -82,7 +72,7 @@ std::vector<ThreadAllocation> ThreadAllocator::ReturnThreadAllocations()
 
 	for (int i = 0; i < _numThreads; i++) //loop for each thread
 	{
-		ThreadAllocation allocation = ThreadAllocation(_randomSeed,i,_nOversamples); //create the allocation for a thread
+		threadAllocations.push_back(ThreadAllocation(i,_randomSeed,_nOversamples)); //create the allocation for a thread
 
 		int numTasksToCreate = numTracksPerThread;
 
@@ -91,29 +81,37 @@ std::vector<ThreadAllocation> ThreadAllocator::ReturnThreadAllocations()
 
 		for (int j = 0; j < numTasksToCreate; j++) //create tasks and push them into the ThreadAllocation 
 		{
-			allocation.AddTask(tasks[currentTrack]);
+			threadAllocations[i].AddTask(tasks[currentTrack]);
 			currentTrack += 1;
 		}
-
-		//add the allocation for this thread to the global list
-		threadAllocations.push_back(allocation); 
 	}
-
-	return threadAllocations;
 }
 
-int ThreadAllocator::GetNumberOfTracks(const TString& file)
+void ThreadAllocator::ParseFileLimits(const size_t& folderSize)
 {
-	//open the file and retrieve the number of tracks
-	TFile f = TFile(file);
-	TTree *trackIndex;
-	f.GetObject("Track index",trackIndex);
-	int nTracksInFile = trackIndex->GetEntries();
-
-	return nTracksInFile;
+	if (_lowerFileLimit == -1 && _upperFileLimit == -1) //default case, analyze whole folder
+	{ 
+		_lowerFileLimit = 1; //Numbering starts from 1
+		_upperFileLimit = folderSize; 
+	}
+	else if (_upperFileLimit < _lowerFileLimit) //This case is invalid
+	{
+		std::cout << "Lower file limit greater than upper file limit. Aborting." << std::endl;
+		abort();
+	}
+	else if (_upperFileLimit > folderSize)
+	{
+		std::cout << "Upper file limit greater than number of files. Aborting." << std::endl;
+		abort();
+	}
+	else if (_lowerFileLimit < 1)
+	{
+		std::cout << "Lower file limit less than 1. Aborting." << std::endl;
+		abort();
+	}
 }
 
-int ThreadAllocator::MakeTasks(const TString& file, std::vector<ThreadTask>& inputTasks)
+void ThreadAllocator::MakeTasks(const TString& file, std::vector<ThreadTask>& inputTasks)
 {
 	//open the file and retrieve the number of tracks
 	TFile f = TFile(file);
@@ -132,11 +130,7 @@ int ThreadAllocator::MakeTasks(const TString& file, std::vector<ThreadTask>& inp
 	for (Int_t i = 0; i < nTracksInFile; i++)
 	{
 		trackIndexReader.Next();
-		output.push_back(ThreadTask(file,start_entry_val,*end_entry_val));
+		inputTasks.push_back(ThreadTask(file,start_entry_val,*end_entry_val));
 		start_entry_val = *end_entry_val;
 	}
-
-	inputTasks.insert(inputTasks.end(),output.begin(),output.end()); //Append them to the global vector of tasks
-
-	return nTracksInFile;
 }

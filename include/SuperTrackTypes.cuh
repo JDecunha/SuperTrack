@@ -3,10 +3,6 @@
 #include "TMath.h"
 #include <cub/cub.cuh>
 
-//
-//Structs and typedefs
-//
-
 //Geometry
 
 struct SphericalGeometry
@@ -29,10 +25,6 @@ struct SphericalGeometry
 	double sphereRadius;
 	int numSpheresLinear;
 };
-
-//Track-related
-
-//Miscellaneous
 
 struct CUBAddOperator
 {

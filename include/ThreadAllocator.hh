@@ -18,11 +18,11 @@ class ThreadAllocator
 {
 	public:
 		ThreadAllocator(const std::string& folderPath, const int& numThreads, const int& nOversamples = 1, const int& lowerFileLimit = -1, const int& upperFileLimit = -1, const Long_t& randomSeed = time(NULL));
-		std::vector<ThreadAllocation> ReturnThreadAllocations();
+		void ReturnThreadAllocations(std::vector<ThreadAllocation>& threadAllocations);
 
 	private:
-		int GetNumberOfTracks(const TString& file);
-		int MakeTasks(const TString& file, std::vector<ThreadTask>& inputTasks);
+		void MakeTasks(const TString& file, std::vector<ThreadTask>& inputTasks);
+		void ParseFileLimits(const size_t& folderSize); //Take the lower and upper file limits, and error check
 
 		std::string _folderPath;
 		int _numThreads;

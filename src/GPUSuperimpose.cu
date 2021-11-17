@@ -254,7 +254,7 @@ TH1F score_lineal_GPU_New(std::vector<ThreadAllocation> threadAllocations, float
 		{
 			int nVals = (task.GetExitPoint() - task.GetEntryPoint()) + 1; //+1 because number of values includes first and last value
 
-			std::tuple<Int_t,Int_t,Int_t,TString> input = std::make_tuple(task.GetEntryPoint(),task.GetExitPoint(),threadInput.GetRandomSeed(),task.GetFilename());
+			std::tuple<Int_t,Int_t,Int_t,TString> input = std::make_tuple(task.GetEntryPoint(),task.GetExitPoint(),task.GetRandomSeed(),task.GetFilename());
 
 			//Define Track
 			Track deviceTrack;
