@@ -1,6 +1,6 @@
 //SuperTrack
 #include "utils.hh"
-#include "SuperTrackTypes.cuh"
+#include "SphericalGeometry.cuh"
 #include "Track.cuh"
 #include "CubStorageBuffer.cuh"
 #include "Histogram.cuh"

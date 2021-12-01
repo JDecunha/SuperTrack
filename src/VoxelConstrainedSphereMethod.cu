@@ -1,9 +1,9 @@
 #include "VoxelConstrainedSphereMethod.hh"
-#include "SuperTrackTypes.cuh"
 #include "VolumeEdepPair.cuh"
 #include "Track.cuh"
 #include <cuda.h>
 #include <curand.h>
+#include <iostream>
 
 
 VoxelConstrainedSphereMethod::VoxelConstrainedSphereMethod(const INIReader& macroReader) : SimulationMethod(macroReader), _sphericalGeometry(macroReader)

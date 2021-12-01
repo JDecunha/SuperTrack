@@ -3,7 +3,8 @@
 #include <string>
 #include "CubStorageBuffer.cuh"
 #include "VolumeEdepPair.cuh"
-#include "SuperTrackTypes.cuh"
+
+#include "CubAddOperator.cuh"
 
 class Histogram
 {

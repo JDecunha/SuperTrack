@@ -54,7 +54,7 @@ void File_Allocator_test()
 
 	SimulationMethod* method = new VoxelConstrainedSphereMethod(reader);
 
-	//score_lineal_GPU_New(ThreadAllocations,5e3,5e3);
+	score_lineal_GPU_New(ThreadAllocations,5e3,5e3);
 }
 
 void SuperTrack()

@@ -2,7 +2,7 @@
 
 #include "SimulationMethod.hh"
 #include "TROOT.h"
-#include "SuperTrackTypes.cuh"
+#include "SphericalGeometry.cuh"
 #include "Track.cuh"
 
 
