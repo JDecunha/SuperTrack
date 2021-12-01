@@ -1,5 +1,5 @@
 //Functions for debugging / verifying proper operation of the code
-
+/*
 TH1F debug_code_verify_rotation_shifts(TString filepath, float_t scoring_square_half_length, float_t scoring_sphere_spacing, float_t scoring_sphere_diameter, float_t CPE_range,Int_t nthreads, Long_t random_seed = time(NULL),Long64_t nhistoriestoanalyze = 0, int axis = 0)
 {
 	//open the file, retrive the tree
@@ -340,3 +340,4 @@ void debug_verify_rotation_shifts()
 	
 	int end_time = time(0); cout << "ROOT Program Ending. Seconds elapsed: " << (end_time-start_time) << endl;	
 }
+*/
