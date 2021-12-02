@@ -4,6 +4,8 @@
 #include "utils.hh"
 #include "ThreadAllocator.hh"
 #include "VoxelConstrainedSphereMethod.hh"
+#include "SuperTrackManager.hh"
+#include "SimulationMethodFactory.hh"
 //inih
 #include "INIReader.h"
 //ROOT
@@ -45,29 +47,47 @@ void GPU_lineal_test()
 
 void File_Allocator_test()
 {
-	//Create the macro file
+	//Read the macro file
 	INIReader reader = INIReader("../macros/test.ini");
-	
+
+	//Add the voxel constrained sphere method to the list of available simulation methods
+	SimulationMethodFactory& methodFactory = SimulationMethodFactory::GetInstance();
+
+	methodFactory.AddSimulationMethod("VoxelConstrainedSphere", &VoxelConstrainedSphereMethod::Construct);
+
+	//Construct the simulation method based upon the information in the macro file
+	SimulationMethod* method = methodFactory.Construct(reader);
+
+	//Let's think about the design philosophy though
+	//1.) SimulationMethodFactory: is a thread-safe singleton. Eagerly initialized. Different threads will access it but no race conditions should arise since it's just giving you a pointer to a constructor.
+	//2.) SimulationMethod: Should be initialized once on each thread, since it holds memory allocations that need to be distinct on each thread.
+	//3.) Histogram: Should be initialized once on each thread, for the same reason as SimulationMethod.
+	//4.) ThreadAllocations: Should be initiated on the main thread, and sent to SuperTrackManager.
+	//5.) SuperTrackManager: Should be another singleton. It takes the .ini path as an input. Creates the Thread Allocations. Then creates a simulation method and histogram on every single thread.
+
+	/*
 	//Allocate tasks for threads
 	std::string folderPath = "/home/joseph/Dropbox/Documents/Work/Projects/MDA_Microdosimetry/software/MicroTrackGenerator/output/proton/50.0MeV/"; 
 	ThreadAllocator folderAllocator = ThreadAllocator(folderPath,4,100,1,2);
 	std::vector<ThreadAllocation> ThreadAllocations;	
 	folderAllocator.ReturnThreadAllocations(ThreadAllocations);
 
+	//Make histogram
+	Histogram* histogram = new Histogram(200,-1,2,"log");
+
 	//Create the simulation method based off of information in the reader
 	SimulationMethod* method = new VoxelConstrainedSphereMethod(reader);
 
-	score_lineal_GPU_New(ThreadAllocations,5e3,5e3);
-
-	/*
-	So how will the SuperTrackManager be implemented.
+	//score_lineal_GPU_New(ThreadAllocations,5e3,5e3);
 
 	SuperTrackManager manager = SuperTrackManager();
-	manager.AddHistogram(Histogram);
-	manager.AddSimulationMethod(method);
 	manager.AddThreadAllocations(ThreadAllocations);
-	manager.Run();
-	*/
+	manager.AddHistogram(histogram);
+	manager.AddSimulationMethod(method);
+
+	manager.Initialize();
+	manager.Run();*/
+	
 }
 
 void SuperTrack()

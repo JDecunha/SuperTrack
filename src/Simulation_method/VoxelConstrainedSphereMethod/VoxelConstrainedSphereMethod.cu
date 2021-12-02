@@ -11,6 +11,11 @@ VoxelConstrainedSphereMethod::VoxelConstrainedSphereMethod(const INIReader& macr
 	ParseInput();
 }
 
+SimulationMethod* VoxelConstrainedSphereMethod::Construct(const INIReader& macroReader)
+{
+	return new VoxelConstrainedSphereMethod(macroReader);
+}
+
 //ParseInput takes the INIReader and parses the file to initialize the class
 void VoxelConstrainedSphereMethod::ParseInput()
 {

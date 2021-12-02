@@ -17,6 +17,8 @@ class VoxelConstrainedSphereMethod : public SimulationMethod
 		void FreeTrackProcess() override;
 		void Free() override;
 
+		static SimulationMethod* Construct(const INIReader& macroReader);
+
 	private:
 
 		//Takes the information from the .ini reader and make a geometry

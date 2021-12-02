@@ -2,6 +2,7 @@
 
 #include <tuple>
 #include "TROOT.h"
+class ThreadTask;
 
 class Track
 { 
@@ -9,7 +10,8 @@ class Track
 
 		Track();
 		void Free();
-		void AllocateAndLoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString> &input);
+		void AllocateAndLoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString>& input);
+		void AllocateAndLoadTrack(const ThreadTask& task);
 		void AllocateEmptyTrack(int nVals);
 
 
