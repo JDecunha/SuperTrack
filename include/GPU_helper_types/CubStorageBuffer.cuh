@@ -1,7 +1,6 @@
 #pragma once
 
-#include "CubStorageBuffer.cuh"
-#include "CubAddOperator.cuh"
+//CUB
 #include "VolumeEdepPair.cuh"
 
 class CubStorageBuffer

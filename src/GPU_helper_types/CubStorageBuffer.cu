@@ -1,5 +1,5 @@
+#include "CubAddOperator.cuh"
 #include "CubStorageBuffer.cuh"
-#include <cub/cub.cuh>
 
 CubStorageBuffer::CubStorageBuffer()
 {

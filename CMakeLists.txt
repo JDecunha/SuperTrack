@@ -38,6 +38,7 @@ target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/GPU_helper_typ
 target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Simulation_method)
 target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Simulation_method/VoxelConstrainedSphereMethod)
 target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Thread_allocation)
+#target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/extern/cub-1.8.0)
 
 #Link src to the ini reader
 target_link_libraries(src PUBLIC inih)

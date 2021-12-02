@@ -1,10 +1,12 @@
 #pragma once
 
 #include <string>
+
+//CUB
+#include "CubAddOperator.cuh"
 #include "CubStorageBuffer.cuh"
 #include "VolumeEdepPair.cuh"
 
-#include "CubAddOperator.cuh"
 
 class Histogram
 {
