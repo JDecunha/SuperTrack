@@ -1,17 +1,20 @@
 #pragma once
 
-#include <string>
-
+//INIH
+#include "INIReader.h"
 //CUB
 #include "CubAddOperator.cuh"
 #include "CubStorageBuffer.cuh"
 #include "VolumeEdepPair.cuh"
+//STD
+#include <string>
 
 
 class Histogram
 {
 	public:
 		Histogram(int nbins, float binLower, float binUpper, std::string type);
+		Histogram(const INIReader& reader);
 
 		void Accumulate();
 		void Allocate(VolumeEdepPair targetEdeps);
@@ -30,8 +33,6 @@ class Histogram
 	private:
 		void GenerateLogHistogram();
 
-		
-
 		std::string _type;
 };
 
@@ -40,5 +41,5 @@ class Histogram
 namespace HistogramKernel
 {
 	__global__ void AccumulateHistogramVals(int* temp, int* accumulated,int N);
-	__global__ void SortReduceAndAddToHistogramKernel(CubStorageBuffer sortBuffer, CubStorageBuffer reduceBuffer, CubStorageBuffer histogramBuffer, VolumeEdepPair edepsInTarget, VolumeEdepPair sortedEdeps, VolumeEdepPair reducedEdeps, int nbins,int* histogramVals, double* logBins, CUBAddOperator reductionOperator);
+	__global__ void SortReduceAndAddToHistogramKernel(CubStorageBuffer sortBuffer, CubStorageBuffer reduceBuffer, CubStorageBuffer histogramBuffer, VolumeEdepPair edepsInTarget, VolumeEdepPair sortedEdeps, VolumeEdepPair reducedEdeps, int nbins, int* histogramVals, double* logBins, CUBAddOperator reductionOperator);
 };

@@ -3,23 +3,42 @@
 #include "Histogram.cuh"
 #include "SimulationMethod.hh"
 #include "ThreadAllocation.hh"
+#include "INIReader.h"
 #include <vector>
 
 class SuperTrackManager
 {	
 	public:
-		SuperTrackManager();
-		void AddThreadAllocations(std::vector<ThreadAllocation>& allocations);
-		void AddHistogram(Histogram* histogram);
-		void AddSimulationMethod(SimulationMethod* method);
-		void Initialize();
+		//Proper method to instantiate singleton
+		static SuperTrackManager& GetInstance()
+		{
+			static SuperTrackManager singleton;
+
+			return singleton;
+		}
+
+		//Delete the copy and = constructors
+		SuperTrackManager(SuperTrackManager const&) = delete;
+		void operator=(SuperTrackManager const&) = delete;
+
+		//Will access the method factory and add a new method
+		void AddSimulationMethod(const std::string& name, SimulationMethod* (*constructorPointer)(const INIReader&));
+
+		//Will take and store the INIReader pointer, and populate thread allocations
+		void Initialize(INIReader* reader);
+
+		//Passes the INIreader and thread allocations to each thread
+		//Creates thread local histograms and simulation method
 		void Run();
 
-		void TestSuperimpose(std::vector<ThreadAllocation>& allocations, Histogram* histogram, SimulationMethod* method);
-
 	private:
+		//private singleton constructor
+		SuperTrackManager() {_bInitialized = false; } 
+
+		void InitializeThreadAllocations();
+		
+		//Internal values
+		INIReader* _inputFileReader;
 		std::vector<ThreadAllocation> _threadAllocations;
-		Histogram* _histogram;
-		SimulationMethod* _method;
 		bool _bInitialized;
 };

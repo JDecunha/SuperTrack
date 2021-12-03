@@ -13,6 +13,13 @@ Histogram::Histogram(int nbins, float binLower, float binUpper,std::string type=
 	_type = type;
 }
 
+Histogram::Histogram(const INIReader& reader)
+{
+	_type = reader.Get("Histogram","Type","");
+	_binLower = reader.GetFloat("Histogram","BinLower",0);
+	_binUpper = reader.GetFloat("Histogram","BinUpper",0);
+	_nbins = reader.GetInteger("Histogram","NBins",0);
+}
 void Histogram::GenerateLogHistogram()
 {
 	//Get the device Id for active GPU
