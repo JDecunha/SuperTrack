@@ -5,24 +5,26 @@
 #include <curand.h>
 #include <iostream>
 
-
+//Constructor
 VoxelConstrainedSphereMethod::VoxelConstrainedSphereMethod(const INIReader& macroReader) : SimulationMethod(macroReader), _sphericalGeometry(macroReader)
 {
 	ParseInput();
 }
 
-SimulationMethod* VoxelConstrainedSphereMethod::Construct(const INIReader& macroReader)
-{
-	return new VoxelConstrainedSphereMethod(macroReader);
-}
-
-//ParseInput takes the INIReader and parses the file to initialize the class
+//ParseInput takes the INIReader to initialize the class
 void VoxelConstrainedSphereMethod::ParseInput()
 {
 	double scoringRegionHalfLength = _macroReader.GetReal("VoxelConstrainedSphere","ScoringRegionHalfLength",0);
 	double scoringSphereDiameter = _macroReader.GetReal("VoxelConstrainedSphere","ScoringSphereDiameter",0);
 }
 
+//Static method that the SimulationMethodFactory uses to build this simulation method
+SimulationMethod* VoxelConstrainedSphereMethod::Construct(const INIReader& macroReader)
+{
+	return new VoxelConstrainedSphereMethod(macroReader);
+}
+
+//Called to allocate memory at the start of processing a track
 void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask task) 
 { 
 	_oversampleIterationNumber = 0;
@@ -41,6 +43,7 @@ void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask 
 	cudaMalloc(&_inSphereTrackId,_nSteps*sizeof(int));
 }
 
+//Called repeatedly for each track oversample
 void VoxelConstrainedSphereMethod::ProcessTrack(Track track, VolumeEdepPair& edepsInTarget)
 { 
 	//New track. Zero values
@@ -55,6 +58,7 @@ void VoxelConstrainedSphereMethod::ProcessTrack(Track track, VolumeEdepPair& ede
 	_oversampleIterationNumber++;
 }
 
+//Called at the end of processing a track
 void VoxelConstrainedSphereMethod::FreeTrackProcess()
 { 
 	//Free directly allocated memory
@@ -66,6 +70,7 @@ void VoxelConstrainedSphereMethod::FreeTrackProcess()
 	_randomlyShiftedTrack.Free();
 }
 
+//Called at the end of processing all of the tracks
 void VoxelConstrainedSphereMethod::Free()
 { 
 

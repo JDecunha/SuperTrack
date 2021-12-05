@@ -1,9 +1,10 @@
 #include "SphericalGeometry.cuh"
 
-//define the two constructors
+
 //This is just a helper class for VoxelConstrainedSpereMethod
 //Spherical geometry structs get sent to the GPU kernels
 
+//define the two constructors
 SphericalGeometry::SphericalGeometry(double scoring_region_half_length, double sphere_diameter)
 {
 	//Setting values
