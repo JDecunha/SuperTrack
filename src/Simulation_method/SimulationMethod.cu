@@ -5,6 +5,7 @@
 //CUDA Libraries
 #include <cuda.h>
 #include <curand.h>
+#include <iostream>
 
 
 SimulationMethod::SimulationMethod(const INIReader& macroReader)
@@ -16,11 +17,14 @@ void SimulationMethod::GenerateRandomXYShift(const ThreadTask &task, float** ran
 {
 	cudaMalloc(randomVals,2*sizeof(float)*task.GetNOversamples()); 
 	
-	//Random number generation on GPU
+	//Create the random generator
 	curandGenerator_t randGenerator;
 	curandCreateGenerator(&randGenerator,CURAND_RNG_PSEUDO_DEFAULT);
-	//TODO: Change this to collate the numbers rather than add the threadID to randomSeed
-	curandSetPseudoRandomGeneratorSeed(randGenerator,task.GetRandomSeed()+task.GetThreadID());
+
+	//Seed the generator
+	curandSetPseudoRandomGeneratorSeed(randGenerator,task.GetRandomSeed());
+
+	//Make random numbers, and then destroy the generator
 	curandGenerateUniform(randGenerator,*randomVals,2*task.GetNOversamples());
 	curandDestroyGenerator(randGenerator);
 	cudaDeviceSynchronize();

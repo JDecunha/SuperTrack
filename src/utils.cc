@@ -1,52 +1,11 @@
 #include "utils.hh"
 #include "TMath.h"
 
+//
+// utils Namespace
+//
 
-void BinLogX(TH1F* h)
-{
-	///Very useful function from the ROOT forums
-	///If you enter your axes in Log10 notation (i.e. -3,0) in the initial TH1 constructor
-	///This will reformat your bins logarithmically for you
-
-   TAxis *axis = h->GetXaxis();
-   int bins = axis->GetNbins();
-
-   Axis_t from = axis->GetXmin();
-   Axis_t to = axis->GetXmax();
-   Axis_t width = (to - from) / bins;
-   Axis_t *new_bins = new Axis_t[bins + 1];
-
-   for (int i = 0; i <= bins; i++) {
-     new_bins[i] = TMath::Power(10, from + i * width);
-
-   }
-   axis->Set(bins, new_bins);
-   delete[] new_bins;
-} 
-
-void BinLogXMultithread(std::shared_ptr<TH1F> h)
-{
-	///Very useful function from the ROOT forums
-	///If you enter your axes in Log10 notation (i.e. -3,0) in the initial TH1 constructor
-	///This will reformat your bins logarithmically for you
-
-   TAxis *axis = h->GetXaxis();
-   int bins = axis->GetNbins();
-
-   Axis_t from = axis->GetXmin();
-   Axis_t to = axis->GetXmax();
-   Axis_t width = (to - from) / bins;
-   Axis_t *new_bins = new Axis_t[bins + 1];
-
-   for (int i = 0; i <= bins; i++) {
-     new_bins[i] = TMath::Power(10, from + i * width);
-
-   }
-   axis->Set(bins, new_bins);
-   delete[] new_bins;
-} 
-
-void LogSpace(float bottom_order_mag, float top_order_mag, int nbins, double* bins)
+void utils::LogSpace(float bottom_order_mag, float top_order_mag, int nbins, double* bins)
 {
 	//Determine the bin width
 	double width = (top_order_mag-bottom_order_mag)/(nbins);
@@ -57,7 +16,55 @@ void LogSpace(float bottom_order_mag, float top_order_mag, int nbins, double* bi
 	}
 }
 
-void PMF_to_PDF(TH1* h)
+//
+// CPUHistogramUtils Namespace
+//
+
+void CPUHistogramUtils::BinLogX(TH1* h)
+{
+	///Very useful function from the ROOT forums
+	///If you enter your axes in Log10 notation (i.e. -3,0) in the initial TH1 constructor
+	///This will reformat your bins logarithmically for you
+
+   TAxis *axis = h->GetXaxis();
+   int bins = axis->GetNbins();
+
+   Axis_t from = axis->GetXmin();
+   Axis_t to = axis->GetXmax();
+   Axis_t width = (to - from) / bins;
+   Axis_t *new_bins = new Axis_t[bins + 1];
+
+   for (int i = 0; i <= bins; i++) {
+     new_bins[i] = TMath::Power(10, from + i * width);
+
+   }
+   axis->Set(bins, new_bins);
+   delete[] new_bins;
+} 
+
+void CPUHistogramUtils::BinLogXMultithread(std::shared_ptr<TH1> h)
+{
+	///Very useful function from the ROOT forums
+	///If you enter your axes in Log10 notation (i.e. -3,0) in the initial TH1 constructor
+	///This will reformat your bins logarithmically for you
+
+   TAxis *axis = h->GetXaxis();
+   int bins = axis->GetNbins();
+
+   Axis_t from = axis->GetXmin();
+   Axis_t to = axis->GetXmax();
+   Axis_t width = (to - from) / bins;
+   Axis_t *new_bins = new Axis_t[bins + 1];
+
+   for (int i = 0; i <= bins; i++) {
+     new_bins[i] = TMath::Power(10, from + i * width);
+
+   }
+   axis->Set(bins, new_bins);
+   delete[] new_bins;
+}
+
+void CPUHistogramUtils::PMF_to_PDF(TH1* h)
 {
 	//This converts a probability mass function to a probability density function
 	int length = h->GetNbinsX();
@@ -80,7 +87,7 @@ void PMF_to_PDF(TH1* h)
 	}
 }
 
-void Prepare_for_Semilog(TH1* h)
+void CPUHistogramUtils::Prepare_for_Semilog(TH1* h)
 {
 	//This takes a PDF and normalizes it by an extra factor of y (i.e. to give y*f(y))to preserve the graphical properties
 	//of a PDF on a semilog axis
@@ -94,6 +101,10 @@ void Prepare_for_Semilog(TH1* h)
 		h->SetBinContent(i,value*mid_value);
 	}
 }
+
+//
+// Other
+//
 
 void uniform_random_rotation_matrix_optimized(float x0,float x1,float x2, SMatrix33* matrix)
 {

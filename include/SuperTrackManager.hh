@@ -17,6 +17,8 @@ class SuperTrackManager
 			return singleton;
 		}
 
+		~SuperTrackManager() { delete _inputFileReader; }
+
 		//Delete the copy and = constructors
 		SuperTrackManager(SuperTrackManager const&) = delete;
 		void operator=(SuperTrackManager const&) = delete;
@@ -36,6 +38,7 @@ class SuperTrackManager
 		SuperTrackManager() {_bInitialized = false; } 
 
 		void InitializeThreadAllocations();
+		void EndOfRun(TH1D& output);
 		
 		//Internal values
 		INIReader* _inputFileReader;

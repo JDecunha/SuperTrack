@@ -1,4 +1,6 @@
 #include "ThreadAllocation.hh"
+#include <sstream>
+#include <iostream>
 
 //
 //Thread Allocation Definitions
@@ -20,9 +22,13 @@ void ThreadAllocation::AddTask(ThreadTask& task)
 	_tasks.push_back(task);
 
 	//Append thread specific properties to the task
-	_tasks[ntasks]._randomSeed = _randomSeed;
 	_tasks[ntasks]._threadID = _threadID;
 	_tasks[ntasks]._nOversamples = _nOversamples;
+
+	//The randomseed is the collated randomseed, threadID, and task number
+	std::stringstream concatstream;
+	concatstream<<_randomSeed<<_threadID<<ntasks;
+	_tasks[ntasks]._randomSeed = stol(concatstream.str());
 }
 
 std::vector<ThreadTask> ThreadAllocation::GetTasks()

@@ -41,3 +41,12 @@ int main()
 //4.) SimulationMethod: Will be initialized once on each thread, since it holds memory allocations that need to be distinct on each thread.
 //5.) Histogram: Will be initialized once on each thread, since it holds memory allocations that need to be distinct on each thread.
 
+//Plotting
+/*
+TCanvas *c = new TCanvas();
+THStack *histo_stack = new THStack("histograms","");
+histo_stack->Add(&output_reduced);
+histo_stack->Draw("nostack"); //Draw histogram
+gPad->SetLogx(); //Set the logarithmic axes appropriately
+gPad->Modified(); 
+c->Print("mostrecenthist.png");*/

@@ -1,18 +1,23 @@
+//SuperTrack
 #include "SuperTrackManager.hh"
 #include "SimulationMethodFactory.hh"
 #include "Track.cuh"
 #include "ThreadAllocator.hh"
-
+//ROOT
 #include "TROOT.h"
 #include "TFile.h"
-#include "TH1F.h"
+#include "TH1D.h"
 #include "TEntryList.h"
 #include "TTree.h"
 #include "TTreeReader.h"
 #include "TMath.h"
 #include "ROOT/TProcessExecutor.hxx"
-
+#include "TCanvas.h"
+#include "THStack.h"
+#include "TPad.h"
+//STD
 #include <iostream>
+#include <sstream>
 
 void SuperTrackManager::AddSimulationMethod(const std::string& name, SimulationMethod* (*constructorPointer)(const INIReader&))
 {
@@ -22,33 +27,16 @@ void SuperTrackManager::AddSimulationMethod(const std::string& name, SimulationM
 
 void SuperTrackManager::Initialize(INIReader* reader)
 {
-	_inputFileReader = reader; //Store the INIReader poitner locally
+	_inputFileReader = reader; //Store the INIReader pointer locally
 
 	//Initialize the thread allocations with information from the reader
 	InitializeThreadAllocations();
 
+	//Set ROOT to be thread safe
+	ROOT::EnableThreadSafety();
+
 	//If thread allocation creation is succesful then we consider the initialization complete
 	_bInitialized = true;
-}
-
-void SuperTrackManager::InitializeThreadAllocations()
-{
-	if (_inputFileReader->Get("Run","Type","") == "Folder")
-	{
-		//Parse the file
-		std::string folderPath = _inputFileReader->Get("Run","Path","");
-		int firstFile = _inputFileReader->GetInteger("Run","FirstFile",-1);
-		int lastFile = _inputFileReader->GetInteger("Run","LastFile",-1);
-		int numThreads = _inputFileReader->GetInteger("Run","Threads",1);
-		int numOversamples = _inputFileReader->GetInteger("Run","Oversamples",1);
-
-		//Create the thread allocator
-		ThreadAllocator folderAllocator = ThreadAllocator(folderPath,numThreads,numOversamples,firstFile,lastFile);
-
-		//Store the allocations in this class
-		folderAllocator.ReturnThreadAllocations(_threadAllocations);
-	}
-	else {std::cout << "Only analysis runs over folders are supported." << std::endl; abort();}
 }
 
 
@@ -58,63 +46,81 @@ void SuperTrackManager::Run()
 	{
 		auto threadProcess = [=](ThreadAllocation threadInput)
 		{
-			//Retrieve the vector of tasks
-			std::vector<ThreadTask> tasks = threadInput.GetTasks();
-
-			//Construct thread local histograms
-			Histogram histogram = Histogram(*_inputFileReader);
-
-			//Construct thread local simulation method
-			SimulationMethodFactory& methodFactory = SimulationMethodFactory::GetInstance();
-			SimulationMethod* method = methodFactory.Construct(*_inputFileReader);
-
-			//For each task in the ThreadAllocation
-			for (ThreadTask task : tasks)
+			Histogram histogram = Histogram(*_inputFileReader); //Construct thread local histogram
+			SimulationMethod* method = SimulationMethodFactory::GetInstance().Construct(*_inputFileReader); //Construct thread local simulation method
+			
+			for (ThreadTask task : threadInput.GetTasks()) //Loop through each task for this thread
 			{
-				//Load the track
-				Track track;
-				track.AllocateAndLoadTrack(task);
+				//Allocate memory for and load the track
+				Track track; track.AllocateAndLoadTrack(task);
 				
 				//Allocate GPU only memory for the volume:edep paired list
-				VolumeEdepPair edepsInTarget;
-				edepsInTarget.Allocate(task.GetExitPoint()-task.GetEntryPoint()+1);
+				VolumeEdepPair edepsInTarget; edepsInTarget.Allocate(task.GetExitPoint()-task.GetEntryPoint()+1);
 
-				//Allocate required memory for simulation method
+				//Allocate required memory in method and histogram, for this track
 				method->AllocateTrackProcess(track,task);
+				histogram.AllocateTrackProcess(edepsInTarget);
 
-				//Allocate required buffer memory for the histogram
-				histogram.Allocate(edepsInTarget);
-
+				//Process the track oversample number of times
 				for (int oversample = 0; oversample < task.GetNOversamples(); oversample++)
 				{
-					method->ProcessTrack(track,edepsInTarget);
-					histogram.SortReduceAndAddToHistogram(edepsInTarget);
+					method->ProcessTrack(track,edepsInTarget); //Take the track, and return edepsInTarget
+					histogram.SortReduceAndAddToHistogram(edepsInTarget); //From edepInTarget, add to the histogram
 				}
-
-				int number_of_values_in_histogram = 0;
 				cudaDeviceSynchronize();
-				//Read out histogram
-				for (int i = 0; i < histogram._nbins; i++)
-				{
-					number_of_values_in_histogram += histogram._histogramValsAccumulated[i];
-					std::cout << "Bin: " << histogram._binEdges[i] << " Counts: " << histogram._histogramValsAccumulated[i] << std::endl;
-				}
-				std::cout << number_of_values_in_histogram << std::endl;
 
-				method->Free();
-				histogram.Free(); 
+				//Free only memory allocated during track processing
+				method->FreeTrackProcess();
+				histogram.FreeTrackProcess(); 
+				//TODO: have track and volumeedeppair destructors take care of this
+				track.Free();
+				edepsInTarget.Free();
 			}
 
-			TH1F lineal_histogram = TH1F("Lineal energy histogram", "y*f(y)", 200, -2,1);
-			return lineal_histogram;
+			//Clear the heap allocated method. Stack allocated class destructors are taken care of automatically
+			delete method;
+			
+			return histogram.GetCPUHistogram();
 		};
 
-		// Create the pool of workers
+		// Create the pool of workers, based on the number of threads requested
 		ROOT::TProcessExecutor workers(_threadAllocations.size());
 		//Process the jobs and get a vector of the output
-		std::vector<TH1F> process_output = workers.Map(threadProcess, _threadAllocations);
+		std::vector<TH1D> process_output = workers.Map(threadProcess, _threadAllocations);
+		//Reduce the output from each thread
+		TH1D output_reduced = Histogram::ReduceVector(process_output); //process output is left in an undefined state after this function
 
+		//Export the final histogram
+		EndOfRun(output_reduced);
 
 	}
 	else {std::cout << "Can not start run without initializing manager." << std::endl;}
+}
+
+//
+// Private functions
+//
+
+void SuperTrackManager::InitializeThreadAllocations()
+{
+	ThreadAllocator folderAllocator = ThreadAllocator(*_inputFileReader);
+	folderAllocator.ReturnThreadAllocations(_threadAllocations);
+}
+
+void SuperTrackManager::EndOfRun(TH1D& output)
+{
+	//Parse the information from the .ini
+	std::string output_folder = _inputFileReader->Get("Output","Path","");
+	std::string output_prefix = _inputFileReader->Get("Output","NamePrefix","");
+	//Grab the random seed
+	Long_t random_seed = _threadAllocations[0].GetRandomSeed();
+
+	//Concatenate
+	std::stringstream concatstream;
+	concatstream << output_folder << output_prefix << random_seed << ".root";
+	TString filename = concatstream.str();
+
+	//Save
+	TFile outfile(filename,"RECREATE");
+	output.Write();
 }

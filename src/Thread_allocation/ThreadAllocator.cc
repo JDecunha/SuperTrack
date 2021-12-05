@@ -26,6 +26,28 @@ ThreadAllocator::ThreadAllocator(const std::string& folderPath, const int& numTh
 	_nOversamples = nOversamples;
 }
 
+ThreadAllocator::ThreadAllocator(const INIReader& reader)
+{
+	//Check that analysis over a folder is requested
+	if (reader.Get("Run","Type","") == "Folder")
+	{
+		//Parse the file, return error if no file named
+		_folderPath = reader.Get("Run","Path","");
+		if (_folderPath == "") {std::cout << "Macro file error: ([Run], Folder) not defined." << std::endl; abort();}
+
+		//Parse the other inputs. These are optional, no error if these are not present.
+		_lowerFileLimit = reader.GetInteger("Run","FirstFile",-1);
+		_upperFileLimit = reader.GetInteger("Run","LastFile",-1);
+		_numThreads = reader.GetInteger("Run","Threads",1);
+		_nOversamples = reader.GetInteger("Run","Oversamples",1);
+
+		//Check if random seed argument present, if not, take the current time
+		_randomSeed = reader.GetInteger("Run","RandomSeed",-1);
+		if (_randomSeed == -1) { _randomSeed = time(NULL); }
+	}
+	else {std::cout << "Macro file error: ([Run], Type) does not = folder. Only analysis runs over folders are supported." << std::endl; abort();}
+}
+
 void ThreadAllocator::ReturnThreadAllocations(std::vector<ThreadAllocation>& threadAllocations)
 {
 	//Part 1: Save paths of .root files in the directory
@@ -87,7 +109,7 @@ void ThreadAllocator::ReturnThreadAllocations(std::vector<ThreadAllocation>& thr
 	}
 }
 
-void ThreadAllocator::ParseFileLimits(const size_t& folderSize)
+void ThreadAllocator::ParseFileLimits(const int& folderSize)
 {
 	if (_lowerFileLimit == -1 && _upperFileLimit == -1) //default case, analyze whole folder
 	{ 

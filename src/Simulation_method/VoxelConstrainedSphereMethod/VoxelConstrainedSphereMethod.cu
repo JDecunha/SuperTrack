@@ -21,9 +21,6 @@ void VoxelConstrainedSphereMethod::ParseInput()
 {
 	double scoringRegionHalfLength = _macroReader.GetReal("VoxelConstrainedSphere","ScoringRegionHalfLength",0);
 	double scoringSphereDiameter = _macroReader.GetReal("VoxelConstrainedSphere","ScoringSphereDiameter",0);
-
-	std::cout << scoringRegionHalfLength << std::endl;
-	std::cout << scoringSphereDiameter << std::endl;
 }
 
 void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask task) 
