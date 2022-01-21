@@ -4,12 +4,19 @@
 //inih
 #include "INIReader.h"
 
-void SuperTrack()
+void SuperTrack(int argc, char** argv)
 {
 	time_t start;
 	time_t end;
 
 	time(&start);
+
+	//Get the command line arguments
+	std::string INIPath = "../macros/default.ini";
+	if (argc == 2) //macro filename passed
+	{
+		INIPath = argv[1];
+	}
 
 	//Get the SuperTrackManager
 	SuperTrackManager& manager = SuperTrackManager::GetInstance();
@@ -18,7 +25,7 @@ void SuperTrack()
 	manager.AddSimulationMethod("VoxelConstrainedSphere", &VoxelConstrainedSphereMethod::Construct);
 
 	//Initialize the SuperTrackManager with the input file
-	manager.Initialize(new INIReader("../macros/test.ini"));
+	manager.Initialize(new INIReader(INIPath));
 	manager.Run();
 
 	time(&end);
@@ -26,9 +33,9 @@ void SuperTrack()
 }
 
 # ifndef __CINT__
-int main()
+int main(int argc, char** argv)
 {
-  SuperTrack();
+  SuperTrack(argc, argv);
   return 0;
 }
 # endif
