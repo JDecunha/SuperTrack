@@ -10,13 +10,13 @@ class VolumeEdepPair;
 //So the simulationMethod is a combined geometry AND random
 //shift generating class. Those two things together specify
 //a simulation method.
-//I could call it SuperimposeMethod too.
 
 class SimulationMethod
 {
 	public:
 		SimulationMethod(const INIReader& macroReader);
-		
+
+		//Virtual functions
 		virtual void ParseInput() = 0;
 		virtual void AllocateTrackProcess(Track track, ThreadTask task) = 0; //This will handle all the memory allocations
 		virtual void ProcessTrack(Track track, VolumeEdepPair& edepsInTarget) = 0;

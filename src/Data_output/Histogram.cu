@@ -29,6 +29,10 @@ Histogram::Histogram(const INIReader& reader)
 
 	//Values have been set now allocate memory
 	Allocate();
+
+	//Additional values not required to allocate the GPU histogram
+	_suggestedCudaAccumulateBlocks = reader.GetReal("Histogram","SuggestedCudaAccumulateBlocks",4);
+	_suggestedCudaAccumulateThreads = reader.GetReal("Histogram","SuggestedCudaAccumulateThreads",32);
 }
 
 Histogram::~Histogram()
@@ -44,8 +48,7 @@ void Histogram::Allocate()
 	if (_type == "log")
 	{
 		GenerateLogHistogram();
-		//Generate the CPU histogram
-		InitializeCPULogHistogram();
+		InitializeCPULogHistogram(); //Generate the CPU histogram
 	}
 	else
 	{
@@ -108,7 +111,7 @@ void Histogram::FreeTrackProcess()
 
 void Histogram::Accumulate()
 {
-	HistogramKernel::AccumulateHistogramVals<<<4,32>>>(_histogramVals,_histogramValsAccumulated,_nbins);
+	HistogramKernel::AccumulateHistogramVals<<<_suggestedCudaAccumulateBlocks,_suggestedCudaAccumulateThreads>>>(_histogramVals,_histogramValsAccumulated,_nbins);
 }
 
 void Histogram::SortReduceAndAddToHistogram(VolumeEdepPair targetEdeps)

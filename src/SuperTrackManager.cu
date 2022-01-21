@@ -39,6 +39,11 @@ void SuperTrackManager::Initialize(INIReader* reader)
 	_bInitialized = true;
 }
 
+void SuperTrackManager::InitializeThreadAllocations()
+{
+	ThreadAllocator folderAllocator = ThreadAllocator(*_inputFileReader);
+	folderAllocator.ReturnThreadAllocations(_threadAllocations);
+}
 
 void SuperTrackManager::Run()
 {
@@ -51,20 +56,20 @@ void SuperTrackManager::Run()
 			
 			for (ThreadTask task : threadInput.GetTasks()) //Loop through each task for this thread
 			{
-				//Allocate memory for and load the track
+				//Allocate memory for and load the track on GPU
 				Track track; track.AllocateAndLoadTrack(task);
 				
 				//Allocate GPU only memory for the volume:edep paired list
 				VolumeEdepPair edepsInTarget; edepsInTarget.Allocate(task.GetExitPoint()-task.GetEntryPoint()+1);
 
 				//Allocate required memory in method and histogram, for this track
-				method->AllocateTrackProcess(track,task);
+				method->AllocateTrackProcess(track, task);
 				histogram.AllocateTrackProcess(edepsInTarget);
 
 				//Process the track oversample number of times
 				for (int oversample = 0; oversample < task.GetNOversamples(); oversample++)
 				{
-					method->ProcessTrack(track,edepsInTarget); //Take the track, and return edepsInTarget
+					method->ProcessTrack(track, edepsInTarget); //Take the track, and return edepsInTarget
 					histogram.SortReduceAndAddToHistogram(edepsInTarget); //From edepInTarget, add to the histogram
 				}
 				cudaDeviceSynchronize();
@@ -92,19 +97,8 @@ void SuperTrackManager::Run()
 
 		//Export the final histogram
 		EndOfRun(output_reduced);
-
 	}
 	else {std::cout << "Can not start run without initializing manager." << std::endl;}
-}
-
-//
-// Private functions
-//
-
-void SuperTrackManager::InitializeThreadAllocations()
-{
-	ThreadAllocator folderAllocator = ThreadAllocator(*_inputFileReader);
-	folderAllocator.ReturnThreadAllocations(_threadAllocations);
 }
 
 void SuperTrackManager::EndOfRun(TH1D& output)

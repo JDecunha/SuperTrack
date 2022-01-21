@@ -21,6 +21,10 @@ class VoxelConstrainedSphereMethod : public SimulationMethod
 
 	private:
 
+		//Number of threads and blocks suggested by user
+		int _suggestedCudaThreads;
+		int _suggestedCudaBlocks;
+
 		//Takes the information from the .ini reader and make a geometry
 		SphericalGeometry _sphericalGeometry;
 

@@ -14,8 +14,9 @@ VoxelConstrainedSphereMethod::VoxelConstrainedSphereMethod(const INIReader& macr
 //ParseInput takes the INIReader to initialize the class
 void VoxelConstrainedSphereMethod::ParseInput()
 {
-	double scoringRegionHalfLength = _macroReader.GetReal("VoxelConstrainedSphere","ScoringRegionHalfLength",0);
-	double scoringSphereDiameter = _macroReader.GetReal("VoxelConstrainedSphere","ScoringSphereDiameter",0);
+	//Many of the inputs are currently handled by the SphericalGeometry helper struct, look there as well
+	_suggestedCudaBlocks = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaBlocks",256);
+	_suggestedCudaThreads = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaThreads",256);
 }
 
 //Static method that the SimulationMethodFactory uses to build this simulation method
@@ -51,9 +52,12 @@ void VoxelConstrainedSphereMethod::ProcessTrack(Track track, VolumeEdepPair& ede
 	SimulationMethodKernel::ZeroInt<<<1,1>>>(edepsInTarget.numElements);
 
 	//Filter and score the tracks
-	VoxelConstrainedSphereMethodKernel::FilterInScoringBox<<<256,256>>>(_sphericalGeometry,_randomVals,track,_randomlyShiftedTrack,_nSteps,_numInVoxel,_oversampleIterationNumber);	
-	VoxelConstrainedSphereMethodKernel::FilterTrackInSphere<<<256,256>>>(_sphericalGeometry,_randomlyShiftedTrack,_numInVoxel,edepsInTarget.numElements,_inSphereTrackId); 
-	VoxelConstrainedSphereMethodKernel::ScoreTrackInSphere<<<256,256>>>(_sphericalGeometry,_randomlyShiftedTrack,edepsInTarget.numElements,_inSphereTrackId,edepsInTarget);
+		//Filter the tracks that are in the scoring voxel (box)
+	VoxelConstrainedSphereMethodKernel::FilterInScoringBox<<<_suggestedCudaBlocks,_suggestedCudaThreads>>>(_sphericalGeometry,_randomVals,track,_randomlyShiftedTrack,_nSteps,_numInVoxel,_oversampleIterationNumber);	
+		//Filter the tracks that land inside of a scoring sphere
+	VoxelConstrainedSphereMethodKernel::FilterTrackInSphere<<<_suggestedCudaBlocks,_suggestedCudaThreads>>>(_sphericalGeometry,_randomlyShiftedTrack,_numInVoxel,edepsInTarget.numElements,_inSphereTrackId); 
+		//Score the the tracks which reside in a sphere
+	VoxelConstrainedSphereMethodKernel::ScoreTrackInSphere<<<_suggestedCudaBlocks,_suggestedCudaThreads>>>(_sphericalGeometry,_randomlyShiftedTrack,edepsInTarget.numElements,_inSphereTrackId,edepsInTarget);
 
 	_oversampleIterationNumber++;
 }
@@ -92,7 +96,7 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 	double x_shifted; double y_shifted; int outputIndex;
 
 	//Determine index and strid
-   int index = threadIdx.x + blockIdx.x * blockDim.x;
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
 
 	//Counters for shared memory atomics

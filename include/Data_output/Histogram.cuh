@@ -57,6 +57,9 @@ class Histogram
 		std::string _type;
 		int _nbins;
 		float _binLower, _binUpper;
+		int _suggestedCudaAccumulateThreads;
+		int _suggestedCudaAccumulateBlocks;
+
 		//Attributes in CudaMalloced memory
 		double *_binEdges;
 		int *_histogramVals, *_histogramValsAccumulated;
