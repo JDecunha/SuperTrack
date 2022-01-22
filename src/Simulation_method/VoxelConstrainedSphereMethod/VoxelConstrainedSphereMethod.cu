@@ -12,11 +12,20 @@ VoxelConstrainedSphereMethod::VoxelConstrainedSphereMethod(const INIReader& macr
 }
 
 //ParseInput takes the INIReader to initialize the class
-void VoxelConstrainedSphereMethod::ParseInput()
+void VoxelConstrainedSphereMethod::ParseInput() //Many of the inputs are currently handled by the SphericalGeometry helper struct, look there as well
 {
-	//Many of the inputs are currently handled by the SphericalGeometry helper struct, look there as well
-	_suggestedCudaBlocks = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaBlocks",256);
-	_suggestedCudaThreads = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaThreads",256);
+	//Pull the number of SMs 
+	int deviceId;
+	cudaGetDevice(&deviceId);
+	cudaDeviceProp props;
+	cudaGetDeviceProperties(&props, deviceId);
+
+	//Set default number of Blocks and Threads
+	int defaultNumBlocks = props.multiProcessorCount*10;
+	int defaultNumThreads = 256;
+
+	_suggestedCudaBlocks = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaBlocks",defaultNumBlocks);
+	_suggestedCudaThreads = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaThreads",defaultNumThreads);
 }
 
 //Static method that the SimulationMethodFactory uses to build this simulation method
