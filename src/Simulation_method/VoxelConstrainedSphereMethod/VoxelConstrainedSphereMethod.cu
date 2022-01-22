@@ -137,7 +137,8 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 		__syncthreads();
 
 		//Check if in box, if true assign the local index position
-		if (abs(x_shifted) < box_edge  && abs(y_shifted) < box_edge)
+		//we don't have to check Z, the tracks are generated so they are never outside in Z
+		if (abs(x_shifted) < box_edge  && abs(y_shifted) < box_edge) 
 		{
 			localPosition = atomicAdd(&localIndexCounter,1);
 		}
