@@ -1,0 +1,15 @@
+﻿#!/bin/bash
+
+#BSUB -W {walltime_request}
+#BSUB -o /rsrch3/home/imag_phy/jdecunha/SuperTrack/run_logfiles
+#BSUB -cwd /rsrch3/home/imag_phy/jdecunha/SuperTrack/runFiles
+#BSUB -q short
+#BSUB -M 165
+#BSUB -R rusage [mem=165]
+#BSUB -n 28
+#BSUB -u jdecunha@mdanderson.org
+#BSUB -J {job_name}
+
+source /rsrch3/home/radphys_rsch/jdecunha/configure.sh
+
+{run_command}
