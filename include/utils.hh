@@ -7,6 +7,7 @@
 typedef ROOT::Math::SMatrix<Double_t,3> SMatrix33;
 
 //A header file for defining various utility functions
+
 namespace CPUHistogramUtils
 {
 	//Histogram utility functions
@@ -18,6 +19,7 @@ namespace CPUHistogramUtils
 
 namespace utils
 {
+	void LinSpace(float bottom, float top, int nbins, double* bins);
 	void LogSpace(float bottom_order_mag, float top_order_mag, int nbins, double* bins);
 };
 

@@ -5,8 +5,22 @@
 // utils Namespace
 //
 
-void utils::LogSpace(float bottom_order_mag, float top_order_mag, int nbins, double* bins)
+void utils::LinSpace(float bottom, float top, int nbins, double* bins)
 {
+	//Determine the bin width
+	double width = (top-bottom)/(nbins);
+
+	for (int i = 0; i <= nbins; i++)
+	{
+		bins[i] = bottom+(i*width);
+	}
+}
+
+void utils::LogSpace(float bottom, float top, int nbins, double* bins)
+{
+	float bottom_order_mag = TMath::Log10(bottom);
+	float top_order_mag = TMath::Log10(top);
+
 	//Determine the bin width
 	double width = (top_order_mag-bottom_order_mag)/(nbins);
 

@@ -35,8 +35,6 @@ class VoxelConstrainedSphereMethod : public SimulationMethod
 		Track _randomlyShiftedTrack;
 		int* _numInVoxel;
 		int* _inSphereTrackId;
-		
-
 };
 
 namespace VoxelConstrainedSphereMethodKernel

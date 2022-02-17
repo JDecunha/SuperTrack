@@ -7,9 +7,11 @@ class VolumeEdepPair;
 //ROOT
 #include "TROOT.h"
 
-//So the simulationMethod is a combined geometry AND random
+//So a concrete version of a SimulationMethod is a combined geometry AND random
 //shift generating class. Those two things together specify
 //a simulation method.
+
+//What is defined here is just an interface.
 
 class SimulationMethod
 {
@@ -35,24 +37,3 @@ namespace SimulationMethodKernel
 	__global__ void ZeroInt(int* toZero);
 
 };
-
-//So the interface will be as follows:
-//The SuperTrackRunManager will parse the input and look for the
-//simulationMethod specifier
-//Which will then prompt it to generate a simulationMethod of the
-//specified type.
-//
-//The simulation method will receieve the config file as an input parameter
-//allowing it to fill its required fields from the .ini
-//If any field is missing from the .ini it will abort
-//
-//I have to think about how the seeding of random numbers will work
-//as well here though
-//Include another public function that gets called
-//before ProcessTrack every time?
-
-
-//What are my classes?
-//Histogram class
-//simulationMethod class
-//Track class

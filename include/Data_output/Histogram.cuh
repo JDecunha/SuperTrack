@@ -43,14 +43,15 @@ class Histogram
 		static TH1D ReduceVector(std::vector<TH1D>& toReduce);
 
 	private:
-		//Helper functions for the GPU histogram
-		void Allocate();
-		void GenerateLogHistogram();
-		void Accumulate();
+		void ConstructBins();
+
+		//Functions for the GPU histogram
+		void ConstructGPUHistogram();
+		void AccumulateGPUHistogram();
 		
-		//Helper functions for the CPU histogram
+		//Functions for the CPU histogram
 		TH1D _CPU_histogram;
-		void InitializeCPULogHistogram();
+		void ConstructCPUHistogram();
 		void AccumulateCPUHistogram();	//Add the current values from the GPU histogram to the CPU histogram
 
 		//Attributes
@@ -64,7 +65,7 @@ class Histogram
 		double *_binEdges;
 		int *_histogramVals, *_histogramValsAccumulated;
 
-		//Helper classes
+		//Helper classes and storage structs
 		VolumeEdepPair sortedEdeps, reducedEdeps;
 		CubStorageBuffer sortBuffer, reduceBuffer, histogramBuffer;
 		CUBAddOperator reductionOperator;
