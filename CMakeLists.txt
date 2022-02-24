@@ -41,11 +41,16 @@ target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Thread_allocat
 #target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/extern/cub-1.8.0)
 
 #Link src to the ini reader
-target_link_libraries(src PUBLIC inih)
+target_link_libraries(src PUBLIC ${ROOT_LIBRARIES} inih -lcurand)
 
 set_target_properties(src PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
+#add my subdirectories
+add_subdirectory(tst)
+add_subdirectory(extern/googletest)
+
 #Now link my libraries
-target_link_libraries(SuperTrack PRIVATE src ${ROOT_LIBRARIES} inih -lcurand)
+target_link_libraries(SuperTrack PRIVATE src)
+
 
 

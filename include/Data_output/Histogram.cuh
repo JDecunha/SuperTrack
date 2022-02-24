@@ -16,7 +16,7 @@ class Histogram
 {
 	public:
 		//Can construct directly or with user inputs
-		Histogram(int nbins, float binLower, float binUpper, std::string type);
+		Histogram(int nbins, float binLower, float binUpper, std::string type, int suggestedCudaAccumulateBlocks = 4, int suggestedCudaAccumulatedThreads = 32);
 		Histogram(const INIReader& reader);
 
 		//Custom destructor to free memory allocations

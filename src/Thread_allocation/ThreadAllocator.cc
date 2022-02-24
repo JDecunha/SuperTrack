@@ -141,7 +141,7 @@ void ThreadAllocator::MakeTasks(const TString& file, std::vector<ThreadTask>& in
 	f.GetObject("Track index",trackIndex);
 	int nTracksInFile = trackIndex->GetEntries();
 
-	//Establish a pointer to and readout the tracks
+	//Establish a pointer to and readout the end point of the tracks
 	long start_entry_val = 0;
 	TTreeReader trackIndexReader("Track index", &f);
 	TTreeReaderValue<long long> end_entry_val(trackIndexReader, "index");

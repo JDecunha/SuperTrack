@@ -38,7 +38,7 @@ SimulationMethod* VoxelConstrainedSphereMethod::Construct(const INIReader& macro
 void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask task) 
 { 
 	_oversampleIterationNumber = 0;
-	_nSteps = task.GetExitPoint() - task.GetEntryPoint() + 1;
+	_nSteps = task.GetExitPoint() - task.GetEntryPoint();
 
 	//Allocate GPU only memory and fill with random numbers
 	SimulationMethod::GenerateRandomXYShift(task, &_randomVals); 
@@ -156,7 +156,7 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 		{
 			//Atomically add to the global counter for the output array length
 			outputIndex = localPosition+localIndexCounter;
-			//printf("current loop i: %d",i);
+
 			//Copy the track inside the box over to the new array
 			outputTrack.x[outputIndex] = x_shifted;
 			outputTrack.y[outputIndex] = y_shifted;
@@ -215,7 +215,6 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterTrackInSphere(Spherica
 		if (dist <= sphereRadiusMag)
 		{
 			localPosition = atomicAdd(&localIndexCounter,1);
-			
 		}
 		__syncthreads();
 
