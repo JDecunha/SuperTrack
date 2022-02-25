@@ -69,7 +69,6 @@ void ThreadAllocator::ReturnThreadAllocations(std::vector<ThreadAllocation>& thr
 	for (int i = _lowerFileLimit; i <= _upperFileLimit; i++)
 		//i-1, because _lowerFileLimit numbering starts at 1
 		MakeTasks((TString)(filePaths[i-1]), tasks); //Get the tasks from the current file
-	
 
 	//Modify the number of threads allocated to if there are fewer tracks than threads
 	if (tasks.size() < _numThreads)

@@ -12,7 +12,7 @@ void SuperTrack(int argc, char** argv)
 	time(&start);
 
 	//Get the command line arguments
-	std::string INIPath = "../macros/default.ini";
+	std::string INIPath = "../tst/testMacros/testA1.ini";
 	if (argc == 2) //macro filename passed
 	{
 		INIPath = argv[1];
@@ -47,13 +47,3 @@ int main(int argc, char** argv)
 //3.) SimulationMethodFactory: Is a singleton. Eagerly initialized. Different threads will access it but no race conditions should arise since it's just giving you a pointer to a constructor.
 //4.) SimulationMethod: Will be initialized once on each thread, since it holds memory allocations that need to be distinct on each thread.
 //5.) Histogram: Will be initialized once on each thread, since it holds memory allocations that need to be distinct on each thread.
-
-//Plotting
-/*
-TCanvas *c = new TCanvas();
-THStack *histo_stack = new THStack("histograms","");
-histo_stack->Add(&output_reduced);
-histo_stack->Draw("nostack"); //Draw histogram
-gPad->SetLogx(); //Set the logarithmic axes appropriately
-gPad->Modified(); 
-c->Print("mostrecenthist.png");*/

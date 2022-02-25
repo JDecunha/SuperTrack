@@ -60,7 +60,7 @@ void SuperTrackManager::Run()
 				Track track; track.AllocateAndLoadTrack(task);
 				
 				//Allocate GPU only memory for the volume:edep paired list
-				VolumeEdepPair edepsInTarget; edepsInTarget.Allocate(task.GetExitPoint()-task.GetEntryPoint()+1);
+				VolumeEdepPair edepsInTarget; edepsInTarget.Allocate(task.GetExitPoint()-task.GetEntryPoint());
 
 				//Allocate required memory in method and histogram, for this track
 				method->AllocateTrackProcess(track, task);
@@ -73,7 +73,6 @@ void SuperTrackManager::Run()
 					histogram.SortReduceAndAddToHistogram(edepsInTarget); //From edepInTarget, add to the histogram
 				}
 				cudaDeviceSynchronize();
-
 				//Free only memory allocated during track processing
 				method->FreeTrackProcess();
 				histogram.FreeTrackProcess(); 

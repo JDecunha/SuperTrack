@@ -1,6 +1,6 @@
-#not recommended but, easy enough
-file(GLOB_RECURSE TEST_SOURCES LIST_DIRECTORIES false *.h *.hh *.cc *.cu)
+#Set up src_tst
+file(GLOB_RECURSE src_tst ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cu)
 
-add_executable(SuperTrack_tst ${TEST_SOURCES})
-
-target_link_libraries(SuperTrack_tst PUBLIC src gtest)
+#Set up executable
+add_executable(SuperTrack_tst ${src_tst})
+target_link_libraries(SuperTrack_tst PUBLIC gtest_main src)

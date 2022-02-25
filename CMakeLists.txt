@@ -20,7 +20,13 @@ add_library(inih INTERFACE)
 target_include_directories(inih INTERFACE ${CMAKE_SOURCE_DIR}/extern/inih)
 
 ###
-### Configure executable and in-project libraries
+### Add googletest
+###
+
+add_subdirectory(extern/googletest)
+
+###
+### Configure src
 ###
 
 add_executable(SuperTrack SuperTrack.cu)
@@ -28,7 +34,6 @@ add_executable(SuperTrack SuperTrack.cu)
 #locate our project source files and make a library
 file(GLOB_RECURSE sources ${CMAKE_SOURCE_DIR}/src/*.cc ${CMAKE_SOURCE_DIR}/src/*.cu)
 add_library(src STATIC ${sources})
-
 
 #public below means the main SuperTrack.cu inherits the include directories of src
 #hard coding the include directories is sloppy, but simple
@@ -38,19 +43,22 @@ target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/GPU_helper_typ
 target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Simulation_method)
 target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Simulation_method/VoxelConstrainedSphereMethod)
 target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Thread_allocation)
-#target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/extern/cub-1.8.0)
 
-#Link src to the ini reader
+#Link src to the required libraries
 target_link_libraries(src PUBLIC ${ROOT_LIBRARIES} inih -lcurand)
-
 set_target_properties(src PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-#add my subdirectories
-add_subdirectory(tst)
-add_subdirectory(extern/googletest)
-
-#Now link my libraries
+#Link my executable to src, which itself is linked to all of the required libraries
 target_link_libraries(SuperTrack PRIVATE src)
+
+###
+### Add tests
+###
+
+add_subdirectory(tst)
+
+
+
 
 
 

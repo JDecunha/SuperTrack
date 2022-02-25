@@ -149,8 +149,6 @@ __global__ void HistogramKernel::SortReduceAndAddToHistogramKernel(CubStorageBuf
 	//Sort the edep volume pairs
 	cub::DeviceRadixSort::SortPairs(sortBuffer.storage,sortBuffer.size,edepsInTarget.volume,sortedEdeps.volume,edepsInTarget.edep,sortedEdeps.edep,*(edepsInTarget.numElements));
 
-	cudaDeviceSynchronize();
-
 	//Reduce the energy depositions
 	cub::DeviceReduce::ReduceByKey(reduceBuffer.storage,reduceBuffer.size, sortedEdeps.volume, reducedEdeps.volume, sortedEdeps.edep, reducedEdeps.edep, reducedEdeps.numElements, reductionOperator, *(edepsInTarget.numElements));
 
@@ -158,8 +156,6 @@ __global__ void HistogramKernel::SortReduceAndAddToHistogramKernel(CubStorageBuf
 
 	//Create the histogram
 	cub::DeviceHistogram::HistogramRange(histogramBuffer.storage,histogramBuffer.size,reducedEdeps.edep,histogramVals,nbins+1,logBins,*reducedEdeps.numElements);
-
-	cudaDeviceSynchronize();
 }
 
 __global__ void HistogramKernel::AccumulateHistogramVals(int* temp, int* accumulated,int N)

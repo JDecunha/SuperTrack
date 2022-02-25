@@ -49,7 +49,9 @@ void tstTrackGenerator()
         	z = outputValue;
             pTrackOutputTree->Fill();
             pTrackOutputTree->Fill();
-        	indexEntry += 2;
+            pTrackOutputTree->Fill();
+            pTrackOutputTree->Fill();
+        	indexEntry += 4;
         }
 
         pEventIndexTree->Fill();
