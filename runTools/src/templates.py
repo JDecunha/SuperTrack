@@ -25,8 +25,8 @@ SuggestedCudaThreads = 32
 
 
 [Histogram]
-Type = log 
-NBins = 256
+Type = {histType} 
+NBins = {nBins}
 BinLower = {lowerBin}
 BinUpper = {upperBin}
 

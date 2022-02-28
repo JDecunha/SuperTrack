@@ -42,14 +42,22 @@ def determine_series_properties(templateString):
    sphereDiameterCommand = command.Command("Input scoring sphere diameter in nm: ")
    sphereDiameterCommand.AddCondition(commandcondition.FloatCondition())
    sphereDiameter = str(sphereDiameterCommand.GetInput())
-        
-   lowerBinCommand = command.Command("Input order of magnitude for lowest histogram bin: ")
-   lowerBinCommand.AddCondition(commandcondition.IntCondition())
-   lowerBin = int(lowerBinCommand.GetInput())
    
-   upperBinCommand = command.Command("Input order of magnitude for greatest histogram bin: ")
-   upperBinCommand.AddCondition(commandcondition.IntCondition())
-   upperBin = int(upperBinCommand.GetInput())
+   binTypeCommand = command.Command("Input histogram bin type (lin or log): ")
+   binTypeCommand.AddCondition(commandcondition.StringCondition())
+   binType = str(binTypeCommand.GetInput())
+   
+   numBinsCommand = command.Command("Input number of histogram bins: ")
+   numBinsCommand.AddCondition(commandcondition.IntCondition())
+   numBins = int(numBinsCommand.GetInput())
+        
+   lowerBinCommand = command.Command("Input lowest histogram bin (lower edge): ")
+   lowerBinCommand.AddCondition(commandcondition.FloatCondition())
+   lowerBin = float(lowerBinCommand.GetInput())
+   
+   upperBinCommand = command.Command("Input greatest histogram bin (upper edge): ")
+   upperBinCommand.AddCondition(commandcondition.FloatCondition())
+   upperBin = float(upperBinCommand.GetInput())
    
    print "\n ** RUNFILE PROPERTIES: ** \n"
                     
@@ -71,14 +79,14 @@ def determine_series_properties(templateString):
        
    runFileName = "%s_%snm_diameter_x%s_oversamples" % (particle_name,sphereDiameter,nOversamples)
            
-   generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, lowerBin, upperBin)
+   generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin)
    generate_runfile_series(macrofilepaths,walltime,runFileName,jobfiledir,templateString)
    
    print "build complete."        
    
    return  1
 
-def generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, lowerBin, upperBin):
+def generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin):
     
    for energy in energies:
 
@@ -96,7 +104,7 @@ def generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, si
        #make the necessary folders and render the template
        utils.make_directory("../output/")
        utils.make_directory("../output/%s" % particle_name)    
-       macro_template_filled = templates.macro_template.format(inputPath=inputPath,nThreads=nThreads,nOversamples=nOversamples,scoringHalfLength=sideLength,scoringSphereDiameter=sphereDiameter,lowerBin=lowerBin,upperBin=upperBin,outputPath=outputPath,outputName=(macro_name+"_"),macro=macro_filepath)
+       macro_template_filled = templates.macro_template.format(inputPath=inputPath,nThreads=nThreads,nOversamples=nOversamples,scoringHalfLength=sideLength,scoringSphereDiameter=sphereDiameter,histType=binType,nBins=numBins,lowerBin=lowerBin,upperBin=upperBin,outputPath=outputPath,outputName=(macro_name+"_"),macro=macro_filepath)
         
        with file(macro_filepath, "w") as f:
            f.write(macro_template_filled)
