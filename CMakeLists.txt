@@ -3,6 +3,7 @@
 cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 project (SuperTrack VERSION 1.0.0 LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD "17")
+set(CMAKE_CUDA_FLAGS_DEBUG "-g -G") #have host and device symbols in debug code
 
 ###
 ### Find and include ROOT libraries
@@ -47,6 +48,7 @@ target_include_directories(src PUBLIC ${CMAKE_SOURCE_DIR}/include/Thread_allocat
 #Link src to the required libraries
 target_link_libraries(src PUBLIC ${ROOT_LIBRARIES} inih -lcurand)
 set_target_properties(src PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
 
 #Link my executable to src, which itself is linked to all of the required libraries
 target_link_libraries(SuperTrack PRIVATE src)

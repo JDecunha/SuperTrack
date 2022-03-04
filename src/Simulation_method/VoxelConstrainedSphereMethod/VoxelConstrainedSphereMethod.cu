@@ -112,7 +112,7 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 	int localPosition;
 	__shared__ int localIndexCounter;
 	
-	//Shift a random float from 0-1 into the range from -halflength to + halflength
+	//Shift a random float from 0-1 into the range from -halflength to +halflength
 	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*geometry.scoringRegionLength)-geometry.scoringRegionHalfLength);
 	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*geometry.scoringRegionLength)-geometry.scoringRegionHalfLength);
 
