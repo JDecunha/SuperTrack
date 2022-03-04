@@ -61,6 +61,10 @@ def determine_single_properties(templateString):
    upperBinCommand.AddCondition(commandcondition.FloatCondition())
    upperBin = float(upperBinCommand.GetInput())
    
+   outputPathAppendixCommand = command.Command("Include anything you would like to append to the output path (enter a space to skip): ")
+   outputPathAppendixCommand.AddCondition(commandcondition.StringCondition())
+   outputPathAppendix = str(outputPathAppendixCommand.GetInput())
+   
    print "\n ** RUNFILE PROPERTIES: ** \n"
                     
    walltimeCommand = command.Command("Input walltime request: ")
@@ -68,36 +72,57 @@ def determine_single_properties(templateString):
    walltime = str(walltimeCommand.GetInput())
            
    particle_name = os.path.basename(trackLibrary);
-   jobname = "%s_%sMeV_%snm_diameter_x%s_oversamples" % (particle_name,trackEnergy,sphereDiameter,nOversamples)
+   macroFileAdditionalInformation = ""
+   if outputPathAppendix != " ":
+       macroFileAdditionalInformation = outputPathAppendix.replace("/","")
+       jobname = "%s_%sMeV_%snm_diameter_%s_x%s_oversamples" % (particle_name,trackEnergy,sphereDiameter,macroFileAdditionalInformation,nOversamples)
+   else:
+       jobname = "%s_%sMeV_%snm_diameter_x%s_oversamples" % (particle_name,trackEnergy,sphereDiameter,nOversamples)
+   
    macro_filepath = "../macros/%s.ini" % jobname
 
    fileDirCommand = command.Command("Input directory for jobfile relative to the SuperTrack main directory: ")
    fileDirCommand.AddCondition(commandcondition.StringCondition())
    jobfiledir = "../" + str(fileDirCommand.GetInput())
     
-   generate_macrofile(trackLibrary,trackEnergy,nThreads,nOversamples,sideLength,sphereDiameter,binType,numBins,lowerBin,upperBin)
+   generate_macrofile(trackLibrary,trackEnergy,nThreads,nOversamples,sideLength,sphereDiameter,binType,numBins,lowerBin,upperBin, outputPathAppendix)
    generate_runfile(macro_filepath,walltime,jobname,jobfiledir,templateString)
 
    print "build complete."
    
    return 1
 
-def generate_macrofile(trackLibrary, trackEnergy, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin):
+def generate_macrofile(trackLibrary, trackEnergy, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin, outputPathAppendix):
     
     #determine the path for the input tracks to analyze
     inputPath = trackLibrary + "/" + str(trackEnergy) + "MeV/"
     
     #determine the macro filename and path
     particle_name = os.path.basename(trackLibrary);
-    macro_name = "%s_%sMeV_%snm_diameter_x%s_oversamples" % (particle_name,trackEnergy,sphereDiameter,nOversamples)
+    macroFileAdditionalInformation = ""
+    if outputPathAppendix != " ":
+        macroFileAdditionalInformation = outputPathAppendix.replace("/","")
+        macro_name = "%s_%sMeV_%snm_diameter_%s_x%s_oversamples" % (particle_name,trackEnergy,sphereDiameter,macroFileAdditionalInformation,nOversamples)
+    else:
+        macro_name = "%s_%sMeV_%snm_diameter_x%s_oversamples" % (particle_name,trackEnergy,sphereDiameter,nOversamples)
+        
     macro_filepath = "../macros/%s.ini" % macro_name
     
     #determine the SuperTrack output file path
-    outputPath = "../output/%s/" % particle_name
-    
+    outputPath = "../output/%s" % particle_name
+        
     #make the necessary folders and render the template
     utils.make_directory("../output/")
-    utils.make_directory("../output/%s" % particle_name)    
+    utils.make_directory("../output/%s" % particle_name)
+    
+    if outputPathAppendix != " ":
+        for newFolder in outputPathAppendix.split("/"):
+            utils.make_directory("%s/%s" % (outputPath,newFolder))
+            outputPath=outputPath+"/"+newFolder    
+        outputPath+="/"
+    else:
+        outputPath+="/"
+   
     macro_template_filled = templates.macro_template.format(inputPath=inputPath,nThreads=nThreads,nOversamples=nOversamples,scoringHalfLength=sideLength,scoringSphereDiameter=sphereDiameter,histType=binType,nBins=numBins,lowerBin=lowerBin,upperBin=upperBin,outputPath=outputPath,outputName=(macro_name+"_"),macro=macro_filepath)
 
     with file(macro_filepath, "w") as f:

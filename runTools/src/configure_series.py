@@ -7,9 +7,6 @@ import command
 import commandcondition
 #external
 import os
-import numpy as np
-import random
-import sys
 
 """
 Created on Fri Aug 13 13:41:33 2021
@@ -59,6 +56,10 @@ def determine_series_properties(templateString):
    upperBinCommand.AddCondition(commandcondition.FloatCondition())
    upperBin = float(upperBinCommand.GetInput())
    
+   outputPathAppendixCommand = command.Command("Include anything you would like to append to the output path (enter a space to skip): ")
+   outputPathAppendixCommand.AddCondition(commandcondition.StringCondition())
+   outputPathAppendix = str(outputPathAppendixCommand.GetInput())
+   
    print "\n ** RUNFILE PROPERTIES: ** \n"
                     
    walltimeCommand = command.Command("Input walltime request: ")
@@ -73,20 +74,28 @@ def determine_series_properties(templateString):
    macronames = []
    macrofilepaths = []
    for energy in energies:  
-       macroname = "%s_%s_%snm_diameter_x%s_oversamples" % (particle_name,energy,sphereDiameter,nOversamples)
+       if outputPathAppendix != " ":
+           macroFileAdditionalInformation = outputPathAppendix.replace("/","")
+           macroname = "%s_%s_%snm_diameter_%s_x%s_oversamples" % (particle_name,energy,sphereDiameter,macroFileAdditionalInformation,nOversamples)
+       else:
+           macroname = "%s_%s_%snm_diameter_x%s_oversamples" % (particle_name,energy,sphereDiameter,nOversamples)
+           
        macronames.append(macroname)
        macrofilepaths.append("../macros/%s.ini" % macroname)
        
-   runFileName = "%s_%snm_diameter_x%s_oversamples" % (particle_name,sphereDiameter,nOversamples)
+   if outputPathAppendix != " ":  
+       runFileName = "%s_%snm_diameter_%s_x%s_oversamples" % (particle_name,sphereDiameter,macroFileAdditionalInformation,nOversamples)
+   else:
+       runFileName = "%s_%snm_diameter_x%s_oversamples" % (particle_name,sphereDiameter,nOversamples)
            
-   generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin)
+   generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin, outputPathAppendix)
    generate_runfile_series(macrofilepaths,walltime,runFileName,jobfiledir,templateString)
    
    print "build complete."        
    
    return  1
 
-def generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin):
+def generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, sideLength, sphereDiameter, binType, numBins, lowerBin, upperBin, outputPathAppendix):
     
    for energy in energies:
 
@@ -95,15 +104,32 @@ def generate_macrofile_series(trackLibrary, energies, nThreads, nOversamples, si
         
        #determine the macro filename and path
        particle_name = os.path.basename(trackLibrary);
-       macro_name = "%s_%s_%snm_diameter_x%s_oversamples" % (particle_name,energy,sphereDiameter,nOversamples)
+       
+       macroFileAdditionalInformation = ""
+       if outputPathAppendix != " ":
+           macroFileAdditionalInformation = outputPathAppendix.replace("/","")
+           macro_name = "%s_%s_%snm_diameter_%s_x%s_oversamples" % (particle_name,energy,sphereDiameter,macroFileAdditionalInformation,nOversamples)
+       else:
+           macro_name = "%s_%s_%snm_diameter_x%s_oversamples" % (particle_name,energy,sphereDiameter,nOversamples)
+      
+       
        macro_filepath = "../macros/%s.ini" % macro_name
         
        #determine the SuperTrack output file path
-       outputPath = "../output/%s/" % particle_name
+       outputPath = "../output/%s" % particle_name
         
        #make the necessary folders and render the template
        utils.make_directory("../output/")
-       utils.make_directory("../output/%s" % particle_name)    
+       utils.make_directory("../output/%s" % particle_name)
+       
+       if outputPathAppendix != " ":
+           for newFolder in outputPathAppendix.split("/"):
+               utils.make_directory("%s/%s" % (outputPath,newFolder))
+               outputPath=outputPath+"/"+newFolder    
+           outputPath+="/"
+       else:
+           outputPath+="/"
+           
        macro_template_filled = templates.macro_template.format(inputPath=inputPath,nThreads=nThreads,nOversamples=nOversamples,scoringHalfLength=sideLength,scoringSphereDiameter=sphereDiameter,histType=binType,nBins=numBins,lowerBin=lowerBin,upperBin=upperBin,outputPath=outputPath,outputName=(macro_name+"_"),macro=macro_filepath)
         
        with file(macro_filepath, "w") as f:
