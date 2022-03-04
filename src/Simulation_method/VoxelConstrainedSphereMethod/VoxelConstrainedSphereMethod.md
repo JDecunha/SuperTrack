@@ -26,6 +26,8 @@ Currently the only available output information is lineal energy in keV/micron, 
 **List of Volume-Edep pair as output:** For trouble shooting or visualization purposes it might be interesting to output the volumes and associated energy deposition which occured in each sphere. 
 Currently only a Histogram is possible.
 
+**Place start of track explicitly on voxel edge:** See above section on word of caution to see what this is referring to. 
+
 **Efficiency improvements:**
   
   - *Malloc GPU memory only once, based on the longest track to be analyzed*. Currently every time a new track is analyzed, new malloc calls are made on the GPU for the track, the histogram, the lists that get compacted etc. If we looked at all the tracks and found the biggest one, we could just malloc once. This would gain some performance benefits.
@@ -33,6 +35,7 @@ Currently only a Histogram is possible.
   - *Migrate to std::async*. This topic would be a modification to SuperTrackManager as a whole. This would be preferred because debugging the code with GDB would be simplified. I also believe the overhead of std::async is much reduced compared to the current use of fork as well. 
   - *Implement clear distinction between main thread, and sub-process parts of the method*. Currently many things are done on each sub-process that the VoxelConstrainedSphere method is produced on (i.e. the macro file is read in nThreads number of times). This class should be re-structured such that it can be created on the main thread, and some of its values are copied over to the new process. This would be more efficient.
   - *Figure out a method to increase the persistency of the GPU histogram*. Currently the GPU histogram is accumulated after every oversample. Surely we could do that accumulation less often to improve performance somehow right?
+  - *Allow single precision floating point operations.* This would just be implemented by templating a bunch of the kernels, but also the track would have to be read in as float as well.
 
 ## Notes on the CUDA Kernel Algorithms
 
