@@ -4,3 +4,4 @@ Profiling_sessions/
 UsefulCommands.txt
 *.sublime*
 *.pseudocode
+*.pyc

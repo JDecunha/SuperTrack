@@ -31,7 +31,7 @@ BinLower = {lowerBin}
 BinUpper = {upperBin}
 
 ;Meta Parameters
-SuggestedCudaAccumulateBlocks = 4
+SuggestedCudaAccumulateBlocks = 64
 SuggestedCudaAccumulateThreads = 32
 
 [Output]
