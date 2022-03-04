@@ -26,6 +26,7 @@ void VoxelConstrainedSphereMethod::ParseInput() //Many of the inputs are current
 
 	_suggestedCudaBlocks = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaBlocks",defaultNumBlocks);
 	_suggestedCudaThreads = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaThreads",defaultNumThreads);
+	_randomShifts = _macroReader.GetBoolean("VoxelConstrainedSphere","ShiftTrack",true);
 }
 
 //Static method that the SimulationMethodFactory uses to build this simulation method
@@ -41,7 +42,9 @@ void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask 
 	_nSteps = task.GetExitPoint() - task.GetEntryPoint();
 
 	//Allocate GPU only memory and fill with random numbers
-	SimulationMethod::GenerateRandomXYShift(task, &_randomVals); 
+	SimulationMethod::GenerateRandomXYShift(task, &_randomVals);
+	//If random shifts are disabled then write all the values to be zero
+	if (_randomShifts == false) { cudaMemset(_randomVals, 0, 2*sizeof(float)*task.GetNOversamples()); }
 
 	//Allocate memory for the track after being randomly shifted
 	_randomlyShiftedTrack.AllocateEmptyTrack(_nSteps);
