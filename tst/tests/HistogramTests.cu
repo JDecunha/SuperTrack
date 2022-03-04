@@ -430,7 +430,6 @@ TEST(HistogramTests, HandlesVectorOfThousandInSameVolumeLogarithmic)
         }
 
     }
-
 }
 
 

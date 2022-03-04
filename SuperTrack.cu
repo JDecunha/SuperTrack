@@ -12,7 +12,7 @@ void SuperTrack(int argc, char** argv)
 	time(&start);
 
 	//Get the command line arguments
-	std::string INIPath = "../tst/testMacros/testA1.ini";
+	std::string INIPath = "../macros/default.ini";
 	if (argc == 2) //macro filename passed
 	{
 		INIPath = argv[1];

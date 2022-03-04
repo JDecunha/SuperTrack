@@ -26,6 +26,7 @@ void VoxelConstrainedSphereMethod::ParseInput() //Many of the inputs are current
 
 	_suggestedCudaBlocks = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaBlocks",defaultNumBlocks);
 	_suggestedCudaThreads = _macroReader.GetReal("VoxelConstrainedSphere","SuggestedCudaThreads",defaultNumThreads);
+	_randomShifts = _macroReader.GetBoolean("VoxelConstrainedSphere","ShiftTrack",true);
 }
 
 //Static method that the SimulationMethodFactory uses to build this simulation method
@@ -41,7 +42,9 @@ void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask 
 	_nSteps = task.GetExitPoint() - task.GetEntryPoint();
 
 	//Allocate GPU only memory and fill with random numbers
-	SimulationMethod::GenerateRandomXYShift(task, &_randomVals); 
+	SimulationMethod::GenerateRandomXYShift(task, &_randomVals);
+	//If random shifts are disabled then write all the values to be zero
+	if (_randomShifts == false) { cudaMemset(_randomVals, 0, 2*sizeof(float)*task.GetNOversamples()); }
 
 	//Allocate memory for the track after being randomly shifted
 	_randomlyShiftedTrack.AllocateEmptyTrack(_nSteps);
@@ -112,17 +115,14 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 	int localPosition;
 	__shared__ int localIndexCounter;
 	
-	//Convert random shifts in to appropriate range
-	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*geometry.greatestSphereOffset*2)-geometry.greatestSphereOffset);
-	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*geometry.greatestSphereOffset*2)-geometry.greatestSphereOffset);
-
-	//The value we compare to, to check if it's in the box
-	double box_edge = abs(geometry.greatestSphereOffset)+(geometry.sphereRadius);
+	//Shift a random float from 0-1 into the range from -halflength to +halflength
+	double x_shift = ((randomVals[(oversampleIterationNumber*2)]*geometry.scoringRegionLength)-geometry.scoringRegionHalfLength);
+	double y_shift = ((randomVals[(oversampleIterationNumber*2+1)]*geometry.scoringRegionLength)-geometry.scoringRegionHalfLength);
 
 	//Loop over all the energy deposition points
 	for (int i = index; i < numElements; i+=stride)
 	{
-		//Apply random shift
+		//Apply the random shift
 		x_shifted = inputTrack.x[i] + x_shift;
 		y_shifted = inputTrack.y[i] + y_shift;
 
@@ -138,7 +138,7 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 
 		//Check if in box, if true assign the local index position
 		//we don't have to check Z, the tracks are generated so they are never outside in Z
-		if (abs(x_shifted) < box_edge  && abs(y_shifted) < box_edge) 
+		if (abs(x_shifted) < geometry.scoringRegionHalfLength  && abs(y_shifted) < geometry.scoringRegionHalfLength) 
 		{
 			localPosition = atomicAdd(&localIndexCounter,1);
 		}
@@ -169,9 +169,6 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 
 __global__ void VoxelConstrainedSphereMethodKernel::FilterTrackInSphere(SphericalGeometry geometry, Track inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere)
 {
-
-	//printf("%f %f \n",geometry.sphereDiameter,geometry.scoringRegionHalfLength);
-
 	//move all of the variable definitions out of the for loop
 	double distFromNearestSphereX, distFromNearestSphereY, distFromNearestSphereZ, dist;
 
@@ -190,13 +187,11 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterTrackInSphere(Spherica
 	//Loop over all the energy deposition points
 	for (long i = index; i < *numElements; i+=stride)
 	{		
-		//Find distance to the nearest sphere.
-		//For performance reasons, we work in an arbitrary coordinate system here, rather than the "global" coordinate system
-		//The "global" coordinate systrem is relative to the greatest sphere offset
-		//In the later scoring kernel we work in the global coordinate system, and that's why we subtract the greatest sphere offset there
-		distFromNearestSphereX = llrint((inputTrack.x[i])/sphereDiameter)*geometry.sphereDiameter-(inputTrack.x[i]);
-		distFromNearestSphereY = llrint((inputTrack.y[i])/sphereDiameter)*geometry.sphereDiameter-(inputTrack.y[i]); 
-		distFromNearestSphereZ = llrint((inputTrack.z[i])/sphereDiameter)*geometry.sphereDiameter-(inputTrack.z[i]); 
+		//floor(position/diameter) tells us which sphere number we are in, then we add 0.5 to get to center of the sphere. Multiply by diameter to get the position of the center of that sphere.
+		//We subtract the position from this value to find out how far from the center we are
+		distFromNearestSphereX = ((floor(inputTrack.x[i]/sphereDiameter)+0.5)*geometry.sphereDiameter)-inputTrack.x[i];
+		distFromNearestSphereY = ((floor(inputTrack.y[i]/sphereDiameter)+0.5)*geometry.sphereDiameter)-inputTrack.y[i];
+		distFromNearestSphereZ = ((floor(inputTrack.z[i]/sphereDiameter)+0.5)*geometry.sphereDiameter)-inputTrack.z[i]; 
 
 		//Determine if inside the nearest sphere
 		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
@@ -251,10 +246,12 @@ __global__ void VoxelConstrainedSphereMethodKernel::ScoreTrackInSphere(Spherical
 
 	//Loop over all the energy deposition points
 	for (uint64_t i = index; i < *numElements; i+=stride)
-	{		
-		xIndex = llrint((inputTrack.x[trackIdInSphere[i]]-geometry.greatestSphereOffset)/sphereDiameter);
-		yIndex = llrint((inputTrack.y[trackIdInSphere[i]]-geometry.greatestSphereOffset)/sphereDiameter);
-		zIndex = llrint((inputTrack.z[trackIdInSphere[i]]-geometry.greatestSphereOffset)/sphereDiameter);
+	{	
+		//Take the position relative to the edge of the box. Divide by the number of sphere diameters,
+		//and take the floor to find the index in each axis	
+		xIndex = floor((inputTrack.x[trackIdInSphere[i]]-geometry.scoringRegionHalfLength)/sphereDiameter);
+		yIndex = floor((inputTrack.y[trackIdInSphere[i]]-geometry.scoringRegionHalfLength)/sphereDiameter);
+		zIndex = floor((inputTrack.z[trackIdInSphere[i]]-geometry.scoringRegionHalfLength)/sphereDiameter);
 
 		//Determine the Index of the sphere hit
 		sphereHitIndex = xIndex + yIndex*geometry.numSpheresLinear+ zIndex*geometry.numSpheresLinear*geometry.numSpheresLinear; //Keep in mind that for the index it starts counting at zero

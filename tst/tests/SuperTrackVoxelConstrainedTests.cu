@@ -6,11 +6,12 @@
 //gTest
 #include "gtest/gtest.h"
 
+#include "cuda.h"
+
 TEST(SuperTrackVoxelConstrainedTest, A1)
 {
-
     //Step 1.) Set the macro filepath for this test
-    std::string INIPath = "../tst/testMacros/testA1.ini";
+    std::string INIPath = "./testMacros/testA1.ini";
 
     //Step 2.) Run SuperTrack
     SuperTrackManager& manager = SuperTrackManager::GetInstance();
