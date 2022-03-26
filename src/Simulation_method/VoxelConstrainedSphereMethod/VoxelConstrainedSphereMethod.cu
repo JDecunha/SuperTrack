@@ -41,10 +41,8 @@ void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask 
 	_oversampleIterationNumber = 0;
 	_nSteps = task.GetExitPoint() - task.GetEntryPoint();
 
-	//Allocate GPU only memory and fill with random numbers
-	SimulationMethod::GenerateRandomXYShift(task, &_randomVals);
-	//If random shifts are disabled then write all the values to be zero
-	if (_randomShifts == false) { cudaMemset(_randomVals, 0, 2*sizeof(float)*task.GetNOversamples()); }
+	//Allocate GPU only memory and fill with random numbers, or fill with 0.5 if shifts not requested
+	GenerateRandomXYShift(task, &_randomVals);
 
 	//Allocate memory for the track after being randomly shifted
 	_randomlyShiftedTrack.AllocateEmptyTrack(_nSteps);
@@ -54,6 +52,30 @@ void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask 
 
 	//Allocate memory to store the StepIDs of the steps within spheres
 	cudaMalloc(&_inSphereTrackId,_nSteps*sizeof(int));
+}
+
+void VoxelConstrainedSphereMethod::GenerateRandomXYShift(const ThreadTask &task, float** randomVals)
+{
+	cudaMalloc(randomVals,2*sizeof(float)*task.GetNOversamples()); 
+
+	if (_randomShifts == true)
+	{
+		//Create the random generator
+		curandGenerator_t randGenerator;
+		curandCreateGenerator(&randGenerator,CURAND_RNG_PSEUDO_DEFAULT);
+
+		//Seed the generator
+		curandSetPseudoRandomGeneratorSeed(randGenerator,task.GetRandomSeed());
+
+		//Make random numbers, and then destroy the generator
+		curandGenerateUniform(randGenerator,*randomVals,2*task.GetNOversamples());
+		curandDestroyGenerator(randGenerator);
+	}
+	else //set the random vals to 0.5 (no shift) if not requested
+	{
+		VoxelConstrainedSphereMethodKernel::SetRandomValsToHalf<<<_suggestedCudaBlocks,_suggestedCudaThreads>>>(*randomVals, 2*task.GetNOversamples());
+	}
+	cudaDeviceSynchronize();
 }
 
 //Called repeatedly for each track oversample
@@ -95,6 +117,19 @@ void VoxelConstrainedSphereMethod::Free()
 //
 //Kernel definitions
 //
+
+__global__ void VoxelConstrainedSphereMethodKernel::SetRandomValsToHalf(float* randomVals, int n)
+{
+	//Determine index and strid
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	//Loop over all random vals and set to 0.5
+	for (int i = index; i < n; i+=stride)
+	{
+		randomVals[i] = 0.5;
+	}
+}
 
 __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(SphericalGeometry geometry, float* randomVals, Track inputTrack, Track outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
 {

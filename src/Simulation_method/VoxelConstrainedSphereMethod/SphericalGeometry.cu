@@ -1,6 +1,5 @@
 #include "SphericalGeometry.cuh"
 
-
 //This is just a helper class for VoxelConstrainedSpereMethod
 //Spherical geometry structs get sent to the GPU kernels
 

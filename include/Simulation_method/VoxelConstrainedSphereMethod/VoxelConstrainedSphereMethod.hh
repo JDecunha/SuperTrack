@@ -21,6 +21,8 @@ class VoxelConstrainedSphereMethod : public SimulationMethod
 
 	private:
 
+		void GenerateRandomXYShift(const ThreadTask &task, float** randomVals);
+
 		//Number of threads and blocks suggested by user
 		int _suggestedCudaThreads;
 		int _suggestedCudaBlocks;
@@ -40,6 +42,7 @@ class VoxelConstrainedSphereMethod : public SimulationMethod
 
 namespace VoxelConstrainedSphereMethodKernel
 {
+	__global__ void SetRandomValsToHalf(float* randomVals,int n);
 	__global__ void ScoreTrackInSphere(SphericalGeometry geometry, Track inputTrack, int *numElements, int *trackIdInSphere, VolumeEdepPair outputPair);
 	__global__ void FilterTrackInSphere(SphericalGeometry geometry, Track inputTrack, int *numElements, int *numElementsCompacted, int *trackIdInSphere);
 	__global__ void FilterInScoringBox(SphericalGeometry geometry, float* randomVals, Track inputTrack, Track outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber);

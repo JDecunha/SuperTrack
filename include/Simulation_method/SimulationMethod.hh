@@ -26,14 +26,10 @@ class SimulationMethod
 		virtual void Free() = 0;
 
 	protected:
-		//Static helper functions for derived SimulationMethods
-		static void GenerateRandomXYShift(const ThreadTask &task, float** randomVals);
-
 		INIReader _macroReader;
 };
 
 namespace SimulationMethodKernel
 {
 	__global__ void ZeroInt(int* toZero);
-
 };

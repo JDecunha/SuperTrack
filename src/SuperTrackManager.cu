@@ -28,6 +28,7 @@ void SuperTrackManager::AddSimulationMethod(const std::string& name, SimulationM
 void SuperTrackManager::Initialize(INIReader* reader)
 {
 	_inputFileReader = reader; //Store the INIReader pointer locally
+	_output.SetDirectory(nullptr); //Have the ROOT histogram not be associated with the gROOT
 
 	//Initialize the thread allocations with information from the reader
 	InitializeThreadAllocations();
@@ -92,10 +93,10 @@ void SuperTrackManager::Run()
 		//Process the jobs and get a vector of the output
 		std::vector<TH1D> process_output = workers.Map(threadProcess, _threadAllocations);
 		//Reduce the output from each thread
-		TH1D output_reduced = Histogram::ReduceVector(process_output); //process output is left in an undefined state after this function
+		_output = Histogram::ReduceVector(process_output); //process output is left in an undefined state after this function
 
 		//Export the final histogram
-		EndOfRun(output_reduced);
+		EndOfRun(_output);
 	}
 	else {std::cout << "Can not start run without initializing manager." << std::endl;}
 }

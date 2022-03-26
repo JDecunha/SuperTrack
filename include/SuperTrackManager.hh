@@ -1,5 +1,6 @@
 #pragma once
 
+class TH1D;
 #include "Histogram.cuh"
 #include "SimulationMethod.hh"
 #include "ThreadAllocation.hh"
@@ -33,6 +34,8 @@ class SuperTrackManager
 		//Creates thread local histograms and simulation method
 		void Run();
 
+		TH1D& GetOutput() { return _output; }
+
 	private:
 		//private singleton constructor
 		SuperTrackManager() {_bInitialized = false; } 
@@ -42,6 +45,7 @@ class SuperTrackManager
 		
 		//Internal values
 		INIReader* _inputFileReader;
+		TH1D _output;
 		std::vector<ThreadAllocation> _threadAllocations;
 		bool _bInitialized;
 };

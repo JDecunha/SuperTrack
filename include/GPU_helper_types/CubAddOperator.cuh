@@ -12,7 +12,7 @@ struct CUBAddOperator
 template <typename T>
 CUB_RUNTIME_FUNCTION __forceinline__ T CUBAddOperator::operator()(const T &a, const T &b) const
 {
-return a+b;
+    return a+b;
 }
 
 

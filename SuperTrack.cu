@@ -3,6 +3,8 @@
 #include "VoxelConstrainedSphereMethod.hh"
 //inih
 #include "INIReader.h"
+//ROOT
+#include "TH1D.h"
 
 void SuperTrack(int argc, char** argv)
 {
