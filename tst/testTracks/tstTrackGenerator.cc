@@ -23,12 +23,12 @@ namespace generateTestTracks
 
 void tstTrackGenerator()
 {
-    /*generateTestTracks::GenerateTestA1();
+    generateTestTracks::GenerateTestA1();
     generateTestTracks::GenerateTestA2();
     generateTestTracks::GenerateTestA3();
     generateTestTracks::GenerateTestA4();
     generateTestTracks::GenerateTestA5();
-    generateTestTracks::GenerateTestA6();*/
+    generateTestTracks::GenerateTestA6();
     generateTestTracks::GenerateTestA7();
 }
 
