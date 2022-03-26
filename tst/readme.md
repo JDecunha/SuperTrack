@@ -20,7 +20,6 @@ A series of tests using the gtest framework have been implemented for SuperTrack
   >
   >Secondly. The SuperTrackManager is implemented as a singleton and has state which can extend between tests. The primary issue that you'll run into with this, is the SuperTrackManager will try to analyze tracks which have been fed to it from other tests, in addition to the tracks being analyzed in the current test. For both of these reasons tests must be run in independent processes.
 </details>
-&nbsp;
 
 Tests are run from the SuperTrack/tst folder, attempting to invoke the tests from another directory will cause a test failure as SuperTrack relies on relative directories to reach the test macro files.
 
@@ -28,7 +27,7 @@ Tests are run from the SuperTrack/tst folder, attempting to invoke the tests fro
 A version of CERN ROOT newer than v. 6.24 is recommended. From a bash terminal invoke the command `root tstTrackGenerator.cc` from the SuperTrack/tst/testTracks folder.
 
 ## Appendix: List of Tests 
-### List of Histogram Tests
+### Histogram Tests
 **1.) HandlesVectorOfOneInDifferentVolumes**
 Verifies the ability of Histogram to process a VolumeEdepPair consisting of 1 eV each in a different volume.
 
@@ -42,12 +41,16 @@ Verifies the ability of Histogram to process a VolumeEdepPair consisting of 1 eV
 Verifies the ability of Histogram to process a VolumeEdepPair consisting of 1000 eV all in the same volume.
 
 **Same as above but logarithmic histogram:**
-**5.) HandlesVectorOfOneInDifferentVolumesLogarithmic
-6.) HandlesVectorOfFiveInDifferentVolumesLogarithmic
-7.) HandlesVectorOfOnesInSameVolumeLogarithmic
-8.) HandlesVectorOfThousandInSameVolumeLogarithmic**
 
-### List of SuperTrack Tests
+**5.) HandlesVectorOfOneInDifferentVolumesLogarithmic**
+
+**6.) HandlesVectorOfFiveInDifferentVolumesLogarithmic**
+
+**7.) HandlesVectorOfOnesInSameVolumeLogarithmic**
+
+**8.) HandlesVectorOfThousandInSameVolumeLogarithmic**
+
+### SuperTrack Tests
 **Test A1: A single energy deposition event**
 Verifies the ability of SuperTrack to quantify a single energy deposition event leading to a 1 keV/um lineal energy deposit in a single 1 um diameter sphere.
 
