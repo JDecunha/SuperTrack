@@ -223,9 +223,9 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterTrackInSphere(Spherica
 	{		
 		//Take the position relative to the greatest sphere offset. Divide by the number of sphere diameters away, and round to nearest int to find the index in each axis
 		//Then multiple the index by the sphere diameter, and subtract the current position to get the distance away
-		distFromNearestSphereX = ((llrint((geometry.greatestSphereOffset-inputTrack.x[i])/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.x[i];
-		distFromNearestSphereY = ((llrint((geometry.greatestSphereOffset-inputTrack.y[i])/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.y[i];
-		distFromNearestSphereZ = ((llrint((geometry.greatestSphereOffset-inputTrack.z[i])/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.z[i]; 
+		distFromNearestSphereX = ((llrint((inputTrack.x[i]-geometry.greatestSphereOffset)/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.x[i];
+		distFromNearestSphereY = ((llrint((inputTrack.y[i]-geometry.greatestSphereOffset)/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.y[i];
+		distFromNearestSphereZ = ((llrint((inputTrack.z[i]-geometry.greatestSphereOffset)/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.z[i]; 
 
 		//Determine if inside the nearest sphere
 		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
@@ -283,9 +283,9 @@ __global__ void VoxelConstrainedSphereMethodKernel::ScoreTrackInSphere(Spherical
 	{	
 		//Take the position relative to the greatest sphere offset. Divide by the number of sphere diameters away,
 		//and round to nearest int to find the index in each axis
-		xIndex = llrint((geometry.greatestSphereOffset-inputTrack.x[trackIdInSphere[i]])/geometry.sphereDiameter);
-		yIndex = llrint((geometry.greatestSphereOffset-inputTrack.y[trackIdInSphere[i]])/geometry.sphereDiameter);
-		zIndex = llrint((geometry.greatestSphereOffset-inputTrack.z[trackIdInSphere[i]])/geometry.sphereDiameter);
+		xIndex = llrint((inputTrack.x[trackIdInSphere[i]]-geometry.greatestSphereOffset)/geometry.sphereDiameter);
+		yIndex = llrint((inputTrack.y[trackIdInSphere[i]]-geometry.greatestSphereOffset)/geometry.sphereDiameter);
+		zIndex = llrint((inputTrack.z[trackIdInSphere[i]]-geometry.greatestSphereOffset)/geometry.sphereDiameter);
 
 		//Determine the Index of the sphere hit
 		sphereHitIndex = xIndex + yIndex*geometry.numSpheresLinear+ zIndex*geometry.numSpheresLinear*geometry.numSpheresLinear; //Keep in mind that for the index it starts counting at zero
