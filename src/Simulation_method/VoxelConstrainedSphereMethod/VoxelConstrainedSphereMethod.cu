@@ -170,6 +170,7 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 			localIndexCounter = 0;
 		}
 		__syncthreads();
+		printf("x box full length: %f \n", geometry.scoringRegionLength);
 
 		//Check if in box, if true assign the local index position
 		//we don't have to check Z, the tracks are generated so they are never outside in Z
@@ -216,17 +217,16 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterTrackInSphere(Spherica
 	__shared__ int localIndexCounter;
 
 	//Pre-calculate values
-	double sphereDiameter = geometry.sphereDiameter; 
 	double sphereRadiusMag = geometry.sphereRadius*geometry.sphereRadius; 
 
 	//Loop over all the energy deposition points
 	for (long i = index; i < *numElements; i+=stride)
 	{		
-		//floor(position/diameter) tells us which sphere number we are in, then we add 0.5 to get to center of the sphere. Multiply by diameter to get the position of the center of that sphere.
-		//We subtract the position from this value to find out how far from the center we are
-		distFromNearestSphereX = ((floor(inputTrack.x[i]/sphereDiameter)+0.5)*geometry.sphereDiameter)-inputTrack.x[i];
-		distFromNearestSphereY = ((floor(inputTrack.y[i]/sphereDiameter)+0.5)*geometry.sphereDiameter)-inputTrack.y[i];
-		distFromNearestSphereZ = ((floor(inputTrack.z[i]/sphereDiameter)+0.5)*geometry.sphereDiameter)-inputTrack.z[i]; 
+		//Take the position relative to the greatest sphere offset. Divide by the number of sphere diameters away, and round to nearest int to find the index in each axis
+		//Then multiple the index by the sphere diameter, and subtract the current position to get the distance away
+		distFromNearestSphereX = ((llrint((geometry.greatestSphereOffset-inputTrack.x[i])/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.x[i];
+		distFromNearestSphereY = ((llrint((geometry.greatestSphereOffset-inputTrack.y[i])/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.y[i];
+		distFromNearestSphereZ = ((llrint((geometry.greatestSphereOffset-inputTrack.z[i])/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.z[i]; 
 
 		//Determine if inside the nearest sphere
 		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
@@ -282,11 +282,11 @@ __global__ void VoxelConstrainedSphereMethodKernel::ScoreTrackInSphere(Spherical
 	//Loop over all the energy deposition points
 	for (uint64_t i = index; i < *numElements; i+=stride)
 	{	
-		//Take the position relative to the edge of the box. Divide by the number of sphere diameters,
-		//and take the floor to find the index in each axis	
-		xIndex = floor((inputTrack.x[trackIdInSphere[i]]-geometry.scoringRegionHalfLength)/sphereDiameter);
-		yIndex = floor((inputTrack.y[trackIdInSphere[i]]-geometry.scoringRegionHalfLength)/sphereDiameter);
-		zIndex = floor((inputTrack.z[trackIdInSphere[i]]-geometry.scoringRegionHalfLength)/sphereDiameter);
+		//Take the position relative to the greatest sphere offset. Divide by the number of sphere diameters away,
+		//and round to nearest int to find the index in each axis
+		xIndex = llrint((geometry.greatestSphereOffset-inputTrack.x[trackIdInSphere[i]])/geometry.sphereDiameter);
+		yIndex = llrint((geometry.greatestSphereOffset-inputTrack.y[trackIdInSphere[i]])/geometry.sphereDiameter);
+		zIndex = llrint((geometry.greatestSphereOffset-inputTrack.z[trackIdInSphere[i]])/geometry.sphereDiameter);
 
 		//Determine the Index of the sphere hit
 		sphereHitIndex = xIndex + yIndex*geometry.numSpheresLinear+ zIndex*geometry.numSpheresLinear*geometry.numSpheresLinear; //Keep in mind that for the index it starts counting at zero
