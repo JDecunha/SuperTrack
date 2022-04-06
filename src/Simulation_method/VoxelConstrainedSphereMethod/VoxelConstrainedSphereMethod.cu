@@ -170,7 +170,6 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 			localIndexCounter = 0;
 		}
 		__syncthreads();
-		printf("x box full length: %f \n", geometry.scoringRegionLength);
 
 		//Check if in box, if true assign the local index position
 		//we don't have to check Z, the tracks are generated so they are never outside in Z
