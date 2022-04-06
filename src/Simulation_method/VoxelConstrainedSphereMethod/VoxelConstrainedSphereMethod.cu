@@ -223,9 +223,14 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterTrackInSphere(Spherica
 	{		
 		//Take the position relative to the greatest sphere offset. Divide by the number of sphere diameters away, and round to nearest int to find the index in each axis
 		//Then multiple the index by the sphere diameter, and subtract the current position to get the distance away
-		distFromNearestSphereX = ((llrint((inputTrack.x[i]-geometry.greatestSphereOffset)/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.x[i];
-		distFromNearestSphereY = ((llrint((inputTrack.y[i]-geometry.greatestSphereOffset)/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.y[i];
-		distFromNearestSphereZ = ((llrint((inputTrack.z[i]-geometry.greatestSphereOffset)/geometry.sphereDiameter))*geometry.sphereDiameter)-inputTrack.z[i]; 
+
+		double distFromFurthestSphereX = inputTrack.x[i]-geometry.greatestSphereOffset;
+		double distFromFurthestSphereY = inputTrack.y[i]-geometry.greatestSphereOffset;
+		double distFromFurthestSphereZ = inputTrack.z[i]-geometry.greatestSphereOffset;
+
+		distFromNearestSphereX = ((llrint(distFromFurthestSphereX/geometry.sphereDiameter))*geometry.sphereDiameter)-distFromFurthestSphereX;
+		distFromNearestSphereY = ((llrint(distFromFurthestSphereY/geometry.sphereDiameter))*geometry.sphereDiameter)-distFromFurthestSphereY;
+		distFromNearestSphereZ = ((llrint(distFromFurthestSphereZ/geometry.sphereDiameter))*geometry.sphereDiameter)-distFromFurthestSphereZ; 
 
 		//Determine if inside the nearest sphere
 		dist = (distFromNearestSphereX*distFromNearestSphereX)+(distFromNearestSphereY*distFromNearestSphereY)+(distFromNearestSphereZ*distFromNearestSphereZ);
