@@ -277,4 +277,42 @@ TEST(SuperTrackVoxelConstrainedTest, A7)
     EXPECT_TRUE(pi_estimate < 3.3 && pi_estimate > 3.05) << "Pi estimate equal to: " << pi_estimate << ". Try running again. This test has a finite probability to fail depending on the random seed.";
 }
 
+TEST(SuperTrackVoxelConstrainedTest, A8) //test whether overflow occurs at 4 byte int value
+{
+    //Step 1.) Set the macro filepath for this test
+    std::string INIPath = "./testMacros/testA8.ini";
+
+    //Step 2.) Run SuperTrack
+    SuperTrackManager& manager = SuperTrackManager::GetInstance();
+    manager.AddSimulationMethod("VoxelConstrainedSphere", &VoxelConstrainedSphereMethod::Construct);
+    manager.Initialize(new INIReader(INIPath));
+    manager.Run();
+    TH1D output = manager.GetOutput();
+
+    ///
+    /// Step 3.) Test the output
+    ///
+
+    double edepValue = 1; //keV/um
+    int numEdeps = 7; //1 energy deposition event
+
+    int nBins = output.GetNbinsX(); //get histogram nbins
+
+    for (int i = 1; i <= nBins; i++) //Loop over each bin
+    {
+        auto counts = output.GetBinContent(i);
+        auto low_edge = output.GetBinLowEdge(i);
+        auto high_edge = output.GetBinLowEdge(i+1);
+        
+        //Counts should equal numEdeps in the specified bin
+        if(low_edge <= edepValue && high_edge > edepValue) //<= because lower bin is inclusive
+        { 
+            EXPECT_EQ(counts, numEdeps) << "Counts equal to " << counts << " rather than " << numEdeps << " in bin of low edge: " << low_edge << " and high edge: " << high_edge;
+        } 
+        else //Counts should be 0 in all bins except the specified bin
+        {
+            EXPECT_EQ(counts,0) << "Counts equal to " << counts << " rather than 0 in bin of low edge: " << low_edge << " and high edge: " << high_edge;
+        }
+    }
+}
 

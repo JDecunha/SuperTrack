@@ -19,6 +19,7 @@ namespace generateTestTracks
     void GenerateTestA5();
     void GenerateTestA6();
     void GenerateTestA7();
+    void GenerateTestA8();
 };
 
 void tstTrackGenerator()
@@ -30,6 +31,7 @@ void tstTrackGenerator()
     generateTestTracks::GenerateTestA5();
     generateTestTracks::GenerateTestA6();
     generateTestTracks::GenerateTestA7();
+    generateTestTracks::GenerateTestA8();
 }
 
 void generateTestTracks::GenerateTestA1()
@@ -451,6 +453,81 @@ void generateTestTracks::GenerateTestA7() // Similar to the track for A2, but mo
 
         pEventIndexTree->Fill();
     }
+
+    std::cout << indexEntry << std::endl;
+
+    pTrackOutputFile->Write(0,TObject::kWriteDelete);
+    pTrackOutputFile->Close();
+}
+
+void generateTestTracks::GenerateTestA8() //Energy depositions at a point to check overflows
+{
+    //This test just shows whether numbers are overflowing at the 4-byte int level or not
+
+    //To make this test even better. Copy this printf into VoxelConstrainedSphereMethodKernel::ScoreTrackInSphere
+    //At the very end
+    /*
+    printf("X,Y,Z position: %f, %f, %f \n X,Y,Z index: %ld, %ld, %ld SphereHitIndex: %ld \n \n",inputTrack.x[trackIdInSphere[i]],inputTrack.y[trackIdInSphere[i]],inputTrack.z[trackIdInSphere[i]], xIndex,yIndex,zIndex,outputPair.volume[i]);
+    */
+
+    //Need to establish my variables
+    double x,y,z,edep;
+    long indexEntry = 0;
+
+    //Set track information to known fixed values
+    edep = double(20)/double(3); //to give 1 keV per micrometer in a 10 nm diameter sphere
+
+    //Create TFile
+    auto pTrackOutputFile = new TFile("./testA8/testA8.root","RECREATE");
+
+    //Code dragged directly out of MicroTrackGenerator
+    auto pTrackOutputTree = new TTree("Tracks","Track information data");
+
+    //Configure the branches
+    pTrackOutputTree->Branch("x [nm]",&x,"x/D");
+    pTrackOutputTree->Branch("y [nm]",&y,"y/D");
+    pTrackOutputTree->Branch("z [nm]",&z,"z/D");
+    pTrackOutputTree->Branch("edep [eV]",&edep,"edep/D");
+
+    //Create the Tree
+    auto pEventIndexTree = new TTree("Track index","Entry number for the end of each track");
+
+    //Configure the branch
+    pEventIndexTree->Branch("index",&indexEntry,"index/L");
+
+    double boxedge = 1.5e6;
+
+    //The overflow test works with 10 nm diameter spheres in a 3 mm side length box
+    //Entering positions manually
+    x = 5-boxedge; y = 5-boxedge; z = 5-boxedge; //nm for the (0,0,0) sphere 
+    pTrackOutputTree->Fill();
+    indexEntry += 1;
+
+    x = 836465-boxedge; y = 71585-boxedge;  //one below the potential overflow
+    pTrackOutputTree->Fill();
+    indexEntry += 1;
+
+    x = 836475-boxedge; y = 71585-boxedge;  //nm for the (836475,7158,0) sphere. Where it should overflow to negative numbers 
+    pTrackOutputTree->Fill();
+    indexEntry += 1;
+
+    x = 836485-boxedge; y = 71585-boxedge;  //one above the potential overflow
+    pTrackOutputTree->Fill();
+    indexEntry += 1;
+
+    x = 1672955-boxedge; y = 143166-boxedge; //where it would overflow with an unsigned 4 byte int 
+    pTrackOutputTree->Fill();
+    indexEntry += 1;
+
+    x = 1672965-boxedge; y = 143166-boxedge; //one above where it would overflow with an unsigned 4 byte
+    pTrackOutputTree->Fill();
+    indexEntry += 1;
+
+    x = 5-boxedge; y = 5-boxedge; z = 1.5e6-5;//this is just an astronomically large value. Test it with the print statement above to be sure it's working. 
+    pTrackOutputTree->Fill();
+    indexEntry += 1;
+
+    pEventIndexTree->Fill();
 
     std::cout << indexEntry << std::endl;
 

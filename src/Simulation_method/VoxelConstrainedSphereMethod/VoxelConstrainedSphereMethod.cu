@@ -273,7 +273,7 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterTrackInSphere(Spherica
 __global__ void VoxelConstrainedSphereMethodKernel::ScoreTrackInSphere(SphericalGeometry geometry, Track inputTrack, int *numElements, int *trackIdInSphere, VolumeEdepPair outputPair)
 {
 	//move all of the variable definitions out of the for loop
-	long xIndex, yIndex, zIndex, sphereHitIndex;
+	uint64_t xIndex, yIndex, zIndex, sphereHitIndex;
 
 	//Pre-calculate some values
 	double sphereDiameter = geometry.sphereDiameter;
