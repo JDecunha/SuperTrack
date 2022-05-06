@@ -62,7 +62,7 @@ void generateTestTracks::GenerateTestA1()
     //Configure the branch
     pEventIndexTree->Branch("index",&indexEntry,"index/L");
     
-    double startPosition = -1.5e6+0.5e3;
+    double startPosition = 0.5e3;
     double stopPosition = startPosition+1e3;
     double positionStride = 1e3;
 
@@ -115,8 +115,8 @@ void generateTestTracks::GenerateTestA2()
     //Configure the branch
     pEventIndexTree->Branch("index",&indexEntry,"index/L");
     
-    double startPosition = -1.5e6+0.5e3;
-    double stopPosition = 1.5e6-0.5e3;
+    double startPosition = 0.5e3;
+    double stopPosition = 3e6-0.5e3;
     double positionStride = 1e3;
 
    for (int i = 0; i < 1; i++)
@@ -168,14 +168,14 @@ void generateTestTracks::GenerateTestA3() // Fill a plane of the cube (y, and z 
     //Configure the branch
     pEventIndexTree->Branch("index",&indexEntry,"index/L");
     
-    double startPosition = -1.5e6+0.5e3;
-    double stopPosition = 1.5e6-0.5e3;
+    double startPosition = 0.5e3;
+    double stopPosition = 3e6-0.5e3;
     double positionStride = 1e3;
 
     //Place a plane in y and z
     for (int i = 0; i < 1; i++)
     {
-        for (double yCoordinate = startPosition; yCoordinate <= stopPosition; yCoordinate+=positionStride)
+        for (double yCoordinate = startPosition-1.5e6; yCoordinate <= stopPosition-1.5e6; yCoordinate+=positionStride)
         {
             for (double zCoordinate = startPosition; zCoordinate <= stopPosition; zCoordinate+=positionStride)
             {
@@ -222,8 +222,8 @@ void generateTestTracks::GenerateTestA4() // Generate a track to test that filte
     //Configure the branch
     pEventIndexTree->Branch("index",&indexEntry,"index/L");
     
-    double startPosition = -1.5e6+0.5e3;
-    double stopPosition = 1.5e6-0.5e3;
+    double startPosition = 0.5e3;
+    double stopPosition = 3e6-0.5e3;
     double positionStride = 1e3;
 
    for (int i = 0; i < 5; i++)
@@ -275,8 +275,8 @@ void generateTestTracks::GenerateTestA5() // Generate a track to test that filte
     //Configure the branch
     pEventIndexTree->Branch("index",&indexEntry,"index/L");
     
-    double startPosition = -1.5e6+0.5e3;
-    double stopPosition = 1.5e6-0.5e3;
+    double startPosition = 0.5e3;
+    double stopPosition = 3e6-0.5e3;
     double positionStride = 1e3;
 
     double safety = 0; //distance in nanometers we keep edeps from the edges of the sphere
@@ -337,8 +337,8 @@ void generateTestTracks::GenerateTestA6() // Generate a track where all the poin
     //Configure the branch
     pEventIndexTree->Branch("index",&indexEntry,"index/L");
     
-    double startPosition = -1.5e6+0.5e3;
-    double stopPosition = 1.5e6-0.5e3;
+    double startPosition = 0.5e3;
+    double stopPosition = 3e6-0.5e3;
     double positionStride = 1e3;
 
     /*
@@ -352,7 +352,7 @@ void generateTestTracks::GenerateTestA6() // Generate a track where all the poin
     x = startPosition;
     for (z = startPosition; z <= stopPosition; z += positionStride)
     {
-        for (y = startPosition; y <= stopPosition; y += positionStride)
+        for (y = startPosition-1.5e6; y <= stopPosition-1.5e6; y += positionStride)
         {
             //output
             pTrackOutputTree->Fill();
@@ -364,7 +364,7 @@ void generateTestTracks::GenerateTestA6() // Generate a track where all the poin
     x = stopPosition;
     for (z = startPosition; z <= stopPosition; z += positionStride)
     {
-        for (y = startPosition; y <= stopPosition; y += positionStride)
+        for (y = startPosition-1.5e6; y <= stopPosition-1.5e6; y += positionStride)
         {
             //output
             pTrackOutputTree->Fill();
@@ -376,7 +376,7 @@ void generateTestTracks::GenerateTestA6() // Generate a track where all the poin
     y = startPosition;
     for (x = startPosition; x <= stopPosition; x += positionStride)
     {
-        for (y = startPosition; y <= stopPosition; y += positionStride)
+        for (y = startPosition-1.5e6; y <= stopPosition-1.5e6; y += positionStride)
         {
             //output
             pTrackOutputTree->Fill();
@@ -388,7 +388,7 @@ void generateTestTracks::GenerateTestA6() // Generate a track where all the poin
     y = stopPosition;
     for (x = startPosition; x <= stopPosition; x += positionStride)
     {
-        for (z = startPosition; z <= stopPosition; z += positionStride)
+        for (z = startPosition-1.5e6; z <= stopPosition-1.5e6; z += positionStride)
         {
             //output
             pTrackOutputTree->Fill();
@@ -435,8 +435,8 @@ void generateTestTracks::GenerateTestA7() // Similar to the track for A2, but mo
     //Configure the branch
     pEventIndexTree->Branch("index",&indexEntry,"index/L");
     
-    double startPosition = -0.1e6;
-    double stopPosition = 0.1e6;
+    double startPosition = 0;
+    double stopPosition = 0.2e6;
     double positionStride = 10;
 
    for (int i = 0; i < 1; i++)
@@ -499,7 +499,7 @@ void generateTestTracks::GenerateTestA8() //Energy depositions at a point to che
 
     //The overflow test works with 10 nm diameter spheres in a 3 mm side length box
     //Entering positions manually
-    x = 5-boxedge; y = 5-boxedge; z = 5-boxedge; //nm for the (0,0,0) sphere 
+    x = 5-boxedge; y = 5-boxedge; z = 5; //nm for the (0,0,0) sphere 
     pTrackOutputTree->Fill();
     indexEntry += 1;
 

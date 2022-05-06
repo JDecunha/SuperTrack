@@ -41,6 +41,10 @@ void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask 
 	_oversampleIterationNumber = 0;
 	_nSteps = task.GetExitPoint() - task.GetEntryPoint();
 
+	//Shift the track's Z origin to the edge of the box
+	VoxelConstrainedSphereMethodKernel::ShiftTrackZOrigin<<<_suggestedCudaBlocks,_suggestedCudaThreads>>>(track, -_sphericalGeometry.scoringRegionHalfLength, _nSteps);	
+	cudaDeviceSynchronize();
+
 	//Allocate GPU only memory and fill with random numbers, or fill with 0.5 if shifts not requested
 	GenerateRandomXYShift(task, &_randomVals);
 
@@ -131,6 +135,24 @@ __global__ void VoxelConstrainedSphereMethodKernel::SetRandomValsToHalf(float* r
 	}
 }
 
+__global__ void VoxelConstrainedSphereMethodKernel::ShiftTrackZOrigin(Track track, double zShift, int numElements)
+{
+	//Inputs:
+	//1.) Track is the input track being analyzed
+	//2.) zShift is the shift being applied to the track
+	//3.) Numelements is the size of your track
+
+	//Determine index and strid
+    int index = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	//Loop over all the energy deposition points
+	for (int i = index; i < numElements; i+=stride)
+	{
+		track.z[i] = track.z[i] + zShift;
+	}
+}
+
 __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(SphericalGeometry geometry, float* randomVals, Track inputTrack, Track outputTrack, int numElements, int *numElementsCompacted, int oversampleIterationNumber)
 {
 	//This function
@@ -173,7 +195,7 @@ __global__ void VoxelConstrainedSphereMethodKernel::FilterInScoringBox(Spherical
 
 		//Check if in box, if true assign the local index position
 		//we don't have to check Z, the tracks are generated so they are never outside in Z
-		if (abs(x_shifted) < geometry.scoringRegionHalfLength  && abs(y_shifted) < geometry.scoringRegionHalfLength) 
+		if (abs(x_shifted) < geometry.scoringRegionHalfLength  && abs(y_shifted) < geometry.scoringRegionHalfLength && abs(inputTrack.z[i]) < geometry.scoringRegionHalfLength) 
 		{
 			localPosition = atomicAdd(&localIndexCounter,1);
 		}
