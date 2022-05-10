@@ -42,7 +42,7 @@ void VoxelConstrainedSphereMethod::AllocateTrackProcess(Track track, ThreadTask 
 	_nSteps = task.GetExitPoint() - task.GetEntryPoint();
 
 	//Shift the track's Z origin to the edge of the box
-	VoxelConstrainedSphereMethodKernel::ShiftTrackZOrigin<<<_suggestedCudaBlocks,_suggestedCudaThreads>>>(track, -_sphericalGeometry.scoringRegionHalfLength, _nSteps);	
+	VoxelConstrainedSphereMethodKernel::ShiftTrackZOrigin<<<_suggestedCudaBlocks,_suggestedCudaThreads>>>(track, _sphericalGeometry.scoringRegionHalfLength, _nSteps);	
 	cudaDeviceSynchronize();
 
 	//Allocate GPU only memory and fill with random numbers, or fill with 0.5 if shifts not requested
