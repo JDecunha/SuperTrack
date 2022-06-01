@@ -82,6 +82,8 @@ if __name__ == "__main__":
     generate_base_directories()
     templateString = application_update_persistent_elements()
     
+    SeriesProperties = configure_series.SeriesPropertiesStruct()
+    
     main_loop = 1
     
     while main_loop == 1:
@@ -98,7 +100,8 @@ if __name__ == "__main__":
                configure_single.determine_single_properties(templateString)
             
            if build_type == "series":
-               configure_series.determine_series_properties(templateString)
+               SeriesProperties.Build(templateString)
+               #configure_series.determine_series_properties(templateString)
                
        elif main == "build" and templateString == 0:
            print "Run-file template not yet configured. Call configure to set path to your template."
