@@ -20,6 +20,12 @@ SphericalGeometry::SphericalGeometry(double scoring_region_half_length, double s
 
 	//gSO is always just one radius off the edge
 	greatestSphereOffset = -scoringRegionHalfLength+sphereRadius;
+
+	//Check that radius is not larger than half length
+	if(sphereRadius > scoringRegionHalfLength)
+	{
+		scoringRegionHalfLength = sphereRadius;
+	}
 }
 
 SphericalGeometry::SphericalGeometry(INIReader inputReader)
@@ -38,4 +44,10 @@ SphericalGeometry::SphericalGeometry(INIReader inputReader)
 
 	//gSO is always just one radius off the edge
 	greatestSphereOffset = -scoringRegionHalfLength+sphereRadius;
+
+	//Check that radius is not larger than half length
+	if(sphereRadius > scoringRegionHalfLength)
+	{
+		scoringRegionHalfLength = sphereRadius;
+	}
 }
