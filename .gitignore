@@ -1,3 +1,7 @@
+/
+runFiles/
+output/
+run_logfiles/
 build/
 misc/
 Profiling_sessions/
@@ -7,3 +11,4 @@ UsefulCommands.txt
 *.pyc
 *.root
 *.html
+macros/*nm*
