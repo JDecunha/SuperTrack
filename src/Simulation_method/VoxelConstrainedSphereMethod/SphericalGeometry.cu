@@ -25,6 +25,9 @@ SphericalGeometry::SphericalGeometry(double scoring_region_half_length, double s
 	if(sphereRadius > scoringRegionHalfLength)
 	{
 		scoringRegionHalfLength = sphereRadius;
+		numSpheresLinear = 1;
+		scoringRegionLength = scoringRegionHalfLength*2;
+		greatestSphereOffset = -scoringRegionHalfLength+sphereRadius;
 	}
 }
 
@@ -49,5 +52,8 @@ SphericalGeometry::SphericalGeometry(INIReader inputReader)
 	if(sphereRadius > scoringRegionHalfLength)
 	{
 		scoringRegionHalfLength = sphereRadius;
+		numSpheresLinear = 1;
+		scoringRegionLength = scoringRegionHalfLength*2;
+		greatestSphereOffset = -scoringRegionHalfLength+sphereRadius;
 	}
 }
