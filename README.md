@@ -56,6 +56,8 @@ Number of times to re-sample each track.
 
 Describe the geometry and track sampling technique for superimposing. Currently only "VoxelConstrainedSphere" has been implemented.
 
+Note that the src/Simulation_method/VoxelConstrainedSphereMethod folder contains its own README.
+
 **[VoxelConstrainedSphere] ScoringRegionHalfLength**
 
 Set the half-length of the scoring "voxel" in nanometers.
