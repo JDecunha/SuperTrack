@@ -8,13 +8,6 @@ The voxel side length itself is malleable, and if the sphere size you've request
 
 The tracks for this method must be developed from the sister project MicroTrackGenerator. Given the side length of the cube you requested an X-Y shift which spans the side length of the cube will be generated. The purpose is to allow the track to originate from any location on the negative Z surface of the cube (the tracks move towards positive Z).
 
-### A word of caution:
-
-Currently, it is assumed that when you create a track with MicroTrackGenerator, the cubic voxel size you use in SuperTrack will match the voxel size the track was generated within.
-This will lead to issues if there is a mismatch. For example: tracks calculated in 3 mm voxels in MicroTrackGenerator, will originate at -1.5 mm in the Z axis in SuperTrack.
-If you choose to use a 0.1 mm box side length, then your tracks will be 1.45 mm away from the box when they start travelling! Be aware of this.
-I may modify SuperTrack in the future to manually place the track starting location at the edge of the voxel. However for now it is not done because performance and simplicity has been my top priority.
-
 ## Output
 
 Currently the only available output information is lineal energy in keV/micron, output through the standard SuperTrack Histogram functionality. See the documentation for Histogram in this project for further information.
