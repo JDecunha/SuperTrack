@@ -19,8 +19,6 @@ Currently the only available output information is lineal energy in keV/micron, 
 **List of Volume-Edep pair as output:** For trouble shooting or visualization purposes it might be interesting to output the volumes and associated energy deposition which occured in each sphere. 
 Currently only a Histogram is possible.
 
-**Place start of track explicitly on voxel edge:** See above section on word of caution to see what this is referring to. 
-
 **Efficiency improvements:**
   
   - *Malloc GPU memory only once, based on the longest track to be analyzed*. Currently every time a new track is analyzed, new malloc calls are made on the GPU for the track, the histogram, the lists that get compacted etc. If we looked at all the tracks and found the biggest one, we could just malloc once. This would gain some performance benefits.
