@@ -30,7 +30,7 @@ void Track::AllocateAndLoadTrack(const ThreadTask& task)
 	TTreeReaderValue<double_t> zReader(trackReader, "z [nm]");
 	TTreeReaderValue<double_t> edepReader(trackReader, "edep [eV]");
 
-	std::cout << "thread #: " << task.GetThreadID() << " starting at: " << std::to_string(task.GetEntryPoint()) << std::endl;
+	//std::cout << "thread #: " << task.GetThreadID() << " starting at: " << std::to_string(task.GetEntryPoint()) << std::endl;
 
 	//malloc and cudaMalloc our arrays respectively
 	double* xhost = (double *)malloc(trackSize);
@@ -79,7 +79,7 @@ void Track::AllocateAndLoadTrack(const std::tuple<Int_t,Int_t,Int_t,TString>& in
 	TTreeReaderValue<double_t> zReader(trackReader, "z [nm]");
 	TTreeReaderValue<double_t> edepReader(trackReader, "edep [eV]");
 
-	std::cout << "thread #: " << std::get<2>(input) << " starting at: " << std::to_string(std::get<0>(input)) << std::endl;
+	//std::cout << "thread #: " << std::get<2>(input) << " starting at: " << std::to_string(std::get<0>(input)) << std::endl;
 
 	//malloc and cudaMalloc our arrays respectively
 	double* xhost = (double *)malloc(trackSize);
