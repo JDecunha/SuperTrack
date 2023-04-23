@@ -117,4 +117,21 @@ void SuperTrackManager::EndOfRun(TH1D& output)
 	//Save
 	TFile outfile(filename,"RECREATE");
 	output.Write();
+
+	//Output the number of tracks analyzed
+	double nTracksAnalyzed = 0;
+	int nOversamples = std::stoi(_inputFileReader->Get("Run","Oversamples",""));
+
+	for (auto & allocation:_threadAllocations)
+	{
+		nTracksAnalyzed += allocation.GetTasks().size();
+	}
+
+	 TNamed tnNumberOfTracks = TNamed("Number of Tracks",std::to_string(nTracksAnalyzed));
+	 TNamed tnNumberOfOversamples = TNamed("Number of Oversamples",std::to_string(nOversamples));
+	 TNamed tnEffectiveNumberOfTracks = TNamed("Effective Number of Tracks",std::to_string(nTracksAnalyzed*nOversamples));
+
+	 tnNumberOfTracks.Write();
+	 tnNumberOfOversamples.Write();
+	 tnEffectiveNumberOfTracks.Write();
 }
