@@ -183,7 +183,7 @@ Once your template has been created and _configure_ has been invoked, you are re
 
 ## Software License
 
-Those wishing to use, modify, or reproduce this software must contact Joseph DeCunha at jdecunha@mdanderson.org to discuss an appropriate collaboration agreement. Copyright is claimed by Joseph M. DeCunha, 2022. All rights not expressly granted under this license are reserved.
+Those wishing to use, modify, or reproduce this software must contact Joseph DeCunha at joemdecunha@protonmail.com to discuss an appropriate collaboration agreement. Copyright is claimed by Joseph M. DeCunha, 2022. All rights not expressly granted under this license are reserved.
 
 This software is provided by the copyright holder "As is" and any express or implied warranties, including, but not limited to, implied warranties of merchantability, of satisfactory quality, and fitness for a particular purpose or use are disclaimed. The copyright holder makes no representation that the software and modifications thereof, will not infringe any patent, copyright, trade secret or other proprietary right.
 
